@@ -31,7 +31,7 @@ if prompt := st.chat_input("질문을 입력하세요"):
     st.session_state.messages.append({"role": "user", "content": prompt})
 
     # AI에게 질문 전달을 위한 문맥 정리
-    full_prompt = ""
+    full_prompt = "너는 친절한 고등학교 영어 교사야. 고등학생 수준에 맞춰서 쉽고 재미있게 설명해 줘."
     for msg in st.session_state.messages:
         role = "User" if msg["role"] == "user" else "Model"
         full_prompt += f"{role}: {msg['content']}\n"
@@ -47,3 +47,4 @@ if prompt := st.chat_input("질문을 입력하세요"):
         
     except Exception as e:
         st.error(f"오류가 발생했어요 ㅠㅠ: {e}")
+
