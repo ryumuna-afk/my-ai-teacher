@@ -2,7 +2,7 @@ import streamlit as st
 import google.generativeai as genai
 
 # 1. 제목 설정
-st.title("🤖 우리 반 AI 선생님")
+st.title("🤖  Muna AI Teacher")
 
 # 2. 금고(Secrets)에서 비밀번호 꺼내오기
 # (학생들 눈에는 이 과정이 안 보입니다!)
@@ -47,4 +47,5 @@ if prompt := st.chat_input("질문을 입력하세요"):
         
     except Exception as e:
         st.error(f"오류가 발생했어요 ㅠㅠ: {e}")
+
 
