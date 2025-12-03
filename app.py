@@ -1,51 +1,49 @@
 import streamlit as st
 import google.generativeai as genai
 
-st.title("🤖 나만의 AI 비서 (Gemini)")
+# 1. 제목 설정
+st.title("🤖 우리 반 AI 선생님")
 
-# 1. 사이드바에 키 입력창 배치
-with st.sidebar:
-    gemini_api_key = st.text_input("Gemini API Key를 입력하세요", key="chatbot_api_key", type="password")
+# 2. 금고(Secrets)에서 비밀번호 꺼내오기
+# (학생들 눈에는 이 과정이 안 보입니다!)
+try:
+    api_key = st.secrets["GEMINI_API_KEY"]
+except FileNotFoundError:
+    st.error("선생님! 서버에 키가 등록되지 않았어요. Secrets 설정을 확인해주세요.")
+    st.stop()
 
-# 2. 대화 기록 초기화
+# 3. Gemini 연결하기
+genai.configure(api_key=api_key)
+model = genai.GenerativeModel("models/gemini-pro-latest")
+
+# 4. 대화 기록 초기화
 if "messages" not in st.session_state:
-    st.session_state["messages"] = [{"role": "assistant", "content": "안녕하세요! 무엇이든 물어보세요."}]
+    st.session_state["messages"] = [{"role": "assistant", "content": "안녕? 나는 AI 선생님이야. 무엇을 도와줄까?"}]
 
-# 3. 대화 내용 화면에 출력
+# 5. 이전 대화 화면에 보여주기
 for msg in st.session_state.messages:
     st.chat_message(msg["role"]).write(msg["content"])
 
-# 4. 사용자 입력 처리
-if prompt := st.chat_input():
-    # 키가 없으면 멈춤
-    if not gemini_api_key:
-        st.info("왼쪽 사이드바에 API Key를 넣어주세요.")
-        st.stop()
-
-    # 내 메시지 화면에 표시 & 저장
+# 6. 학생 입력 처리
+if prompt := st.chat_input("질문을 입력하세요"):
+    # 학생 질문 표시
     st.chat_message("user").write(prompt)
     st.session_state.messages.append({"role": "user", "content": prompt})
 
-    # 5. Gemini 연결 (여기가 핵심!)
-    genai.configure(api_key=gemini_api_key)
-    
-    # ★ 방금 찾은 모델 이름을 정확히 넣었습니다 ★
-    model = genai.GenerativeModel("models/gemini-pro-latest")
-
-    # 6. 대화 맥락 유지하기
+    # AI에게 질문 전달을 위한 문맥 정리
     full_prompt = ""
     for msg in st.session_state.messages:
         role = "User" if msg["role"] == "user" else "Model"
         full_prompt += f"{role}: {msg['content']}\n"
     
     try:
-        # AI에게 답변 요청
+        # AI 답변 생성
         response = model.generate_content(full_prompt)
         msg = response.text
         
-        # AI 답변 화면에 표시 & 저장
+        # 답변 표시
         st.chat_message("assistant").write(msg)
         st.session_state.messages.append({"role": "assistant", "content": msg})
         
     except Exception as e:
-        st.error(f"에러가 났어요: {e}")
+        st.error(f"오류가 발생했어요 ㅠㅠ: {e}")
