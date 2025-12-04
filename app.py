@@ -4,17 +4,19 @@ import PyPDF2
 import os
 import datetime
 import random
-from gtts import gTTS # [추가] 목소리 만드는 도구
-import io # [추가] 오디오 파일 처리
+from gtts import gTTS 
+import io 
+import re # [추가] 영어만 골라내기 위한 정규표현식 도구
 
 # =========================================================
 # [설정] 기본 환경 설정
 # =========================================================
 MODEL_NAME = "models/gemini-pro-latest" 
 TARGET_FILES = ["lesson.pdf"]  
-TEACHER_PASSWORD = "takeit"  # [복구] 설정 없이 바로 쓰는 비밀번호
+TEACHER_PASSWORD = "takeit"  
 
-st.set_page_config(page_title="Muna E. Teacher", page_icon="🏫")
+# [수정 1] 이름 변경 (Muna Teacher)
+st.set_page_config(page_title="Muna Teacher", page_icon="🏫")
 
 # [디자인] 화면 깔끔하게 만들기
 hide_streamlit_style = """
@@ -43,7 +45,6 @@ chat_logs = get_shared_logs()
 with st.sidebar:
     st.header("⚙️ 설정")
     
-    # API 키 입력 (설정 파일 있으면 자동, 없으면 입력창)
     if "GEMINI_API_KEY" in st.secrets:
         api_key = st.secrets["GEMINI_API_KEY"]
     else:
@@ -51,13 +52,12 @@ with st.sidebar:
         
     st.divider()
     
-    # [추가 기능 1] 퀴즈 만들기 버튼
     st.header("🧩 복습 퀴즈")
     if st.button("지금까지 내용으로 퀴즈 내줘!"):
         if "messages" in st.session_state and len(st.session_state.messages) > 1:
             st.session_state["quiz_requested"] = True
         else:
-            st.warning("아직 대화 내용이 부족해요! 먼저 영어 공부를 좀 해볼까요?")
+            st.warning("아직 대화 내용이 부족해요!")
 
     st.divider()
     st.info("📢 **학습 규칙**")
@@ -86,7 +86,6 @@ if "student_info" not in st.session_state:
         if submit:
             name = name.strip()
             
-            # [간편 로그인] 복잡한 설정 없이 바로 비밀번호 확인
             if name == TEACHER_PASSWORD:
                 st.session_state["student_info"] = "TEACHER_MODE"
                 st.rerun()
@@ -133,7 +132,8 @@ if st.session_state["student_info"] == "TEACHER_MODE":
 student_info = st.session_state["student_info"]
 student_name = st.session_state.get("student_name", "친구")
 
-st.title("🏫 Muna E. Teacher")
+# [수정 2] 타이틀 변경
+st.title("🏫 Muna Teacher")
 st.caption(f"로그인 정보: {student_info}")
 
 # (1) PDF 파일 읽기
@@ -156,7 +156,7 @@ else:
 
 SYSTEM_PROMPT = f"""
 [역할]
-당신은 고등학교 1학년을 위한 '영어 구문 분석 전문가' Muna E. Teacher입니다.
+당신은 고등학교 1학년을 위한 '영어 구문 분석 전문가' Muna Teacher입니다.
 {context_data}
 
 [행동 지침]
@@ -180,7 +180,6 @@ if not api_key:
     st.warning("API 키 설정을 확인해주세요.")
     st.stop()
 
-# 안전 필터 (수업 중단 방지)
 safety_settings = [
     {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
     {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
@@ -203,19 +202,16 @@ if "messages" not in st.session_state:
 # (5) 대화 화면 출력
 for msg in st.session_state.messages:
     st.chat_message(msg["role"]).write(msg["content"])
-    # 퀴즈 요청일 경우 버튼 처리 등은 아래 로직에서 이어짐
 
-# (6) 퀴즈 생성 처리 (버튼 클릭 시)
+# (6) 퀴즈 생성 처리
 if st.session_state.get("quiz_requested"):
     st.session_state["quiz_requested"] = False
     with st.chat_message("assistant"):
         with st.spinner("퀴즈를 만들고 있어요... 🤔"):
             quiz_prompt = "지금까지의 대화 내용을 바탕으로 학생이 이해했는지 확인하는 **객관식 퀴즈 1문제**를 만들어줘. 정답과 해설은 맨 아래에 숨겨서(스포일러 방지) 출력해."
-            
             full_context = ""
             for msg in st.session_state.messages[-10:]:
                 full_context += f"{msg['role']}: {msg['content']}\n"
-            
             try:
                 response = model.generate_content(quiz_prompt + "\n\n" + full_context)
                 st.markdown(response.text)
@@ -228,11 +224,9 @@ if prompt := st.chat_input("영어 문장을 입력하세요..."):
     st.chat_message("user").write(prompt)
     st.session_state.messages.append({"role": "user", "content": prompt})
 
-    # 로그 저장
     now = datetime.datetime.now().strftime("%H:%M:%S")
     chat_logs.append([now, student_info, prompt]) 
     
-    # 프롬프트 조립
     full_prompt = SYSTEM_PROMPT + "\n\n"
     recent_messages = st.session_state.messages[-10:]
     for msg in recent_messages:
@@ -250,22 +244,26 @@ if prompt := st.chat_input("영어 문장을 입력하세요..."):
                     full_response += response.text
                     message_placeholder.markdown(full_response + "▌")
             
-            # 랜덤 경고 (20%)
             if random.random() < 0.2:
                 full_response += "\n\n---\n💡 **[Self-Check]** 스스로 고민해보고, 교과서와 비교해보세요! 👀"
             
             message_placeholder.markdown(full_response)
             st.session_state.messages.append({"role": "assistant", "content": full_response})
 
-            # [추가 기능 2] TTS (음성 듣기) - 답변이 끝나면 오디오 플레이어 생성
+            # [수정 3] 영어 발음만 골라서 읽어주기 (Listening Practice)
             try:
-                # 영어 발음(en)으로 읽어줌
-                tts = gTTS(text=full_response, lang='en')
-                audio_fp = io.BytesIO()
-                tts.write_to_fp(audio_fp)
-                st.audio(audio_fp, format='audio/mp3')
+                # 정규표현식으로 한글(가-힣)을 제거하고 영어/숫자/기호만 남김
+                english_only = re.sub(r'[가-힣]+', '', full_response)
+                # 불필요한 공백과 특수문자 정리
+                english_only = re.sub(r'[\*\#\-]', '', english_only).strip()
+                
+                if len(english_only) > 5: # 읽을 영어가 있을 때만 실행
+                    tts = gTTS(text=english_only, lang='en')
+                    audio_fp = io.BytesIO()
+                    tts.write_to_fp(audio_fp)
+                    st.audio(audio_fp, format='audio/mp3')
             except:
-                pass # 오디오 오류나도 챗봇은 멈추지 않음
+                pass 
 
         except Exception as e:
             if "finish_reason" in str(e):
