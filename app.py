@@ -128,7 +128,7 @@ for file_name in TARGET_FILES:
         except:
             pass 
 
-# (2) 챗봇 성격 설정 (간결 모드 적용!)
+# (2) 챗봇 성격 설정
 if pdf_content:
     context_data = f"[수업 자료 참고]\n{pdf_content}"
 else:
@@ -165,14 +165,23 @@ SYSTEM_PROMPT = f"""
    - **동명사 주어:** '~하는 것'으로 해석하며, 항상 **단수 취급**함.
 """
 
-# (3) Gemini 연결
+# (3) Gemini 연결 & [중요] 안전 필터 해제
 if not api_key:
     st.warning("선생님이 아직 API 키를 입력하지 않으셨습니다.")
     st.stop()
 
+# ★★★ 안전 설정 추가된 부분 ★★★
+safety_settings = [
+    {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
+    {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
+    {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
+    {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
+]
+
 genai.configure(api_key=api_key)
 try:
-    model = genai.GenerativeModel(MODEL_NAME)
+    # 모델 생성 시 safety_settings 적용
+    model = genai.GenerativeModel(MODEL_NAME, safety_settings=safety_settings)
 except:
     st.error(f"모델 설정 오류: {MODEL_NAME}을 찾을 수 없습니다.")
     st.stop()
@@ -207,6 +216,7 @@ if prompt := st.chat_input("영어 문장을 입력하세요..."):
         message_placeholder = st.empty()
         full_response = ""
         try:
+            # 안전 필터 때문에 멈추지 않도록 설정 적용됨
             responses = model.generate_content(full_prompt, stream=True)
             for response in responses:
                 if response.text:
@@ -217,4 +227,8 @@ if prompt := st.chat_input("영어 문장을 입력하세요..."):
             st.session_state.messages.append({"role": "assistant", "content": full_response})
 
         except Exception as e:
-            st.error(f"오류가 발생했습니다: {e}")
+            # 안전 관련 에러가 발생해도 부드럽게 넘어가도록 처리
+            if "finish_reason" in str(e) or "valid Part" in str(e):
+                 st.error("AI가 답변을 주저하고 있어요. 질문을 조금 더 부드럽게 바꿔보거나 다시 시도해주세요! (안전 필터)")
+            else:
+                 st.error(f"오류가 발생했습니다: {e}")
