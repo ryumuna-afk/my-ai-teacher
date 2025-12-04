@@ -128,7 +128,7 @@ for file_name in TARGET_FILES:
         except:
             pass 
 
-# (2) 챗봇 성격 설정
+# (2) 챗봇 성격 설정 (문법 분석 강화 버전!)
 if pdf_content:
     context_data = f"[수업 자료 참고]\n{pdf_content}"
 else:
@@ -141,36 +141,39 @@ SYSTEM_PROMPT = f"""
 
 [절대 규칙]
 1. 학생이 영어 문장을 질문하면, **반드시 아래 4단계 포맷**을 지키세요.
-2. **설명은 핵심만 간결하게(단답형)** 작성하세요. 길게 서술하지 마세요.
+2. 설명은 **핵심만 간결하게(단답형)** 작성하세요.
+
+[분석 시 주의사항 ★★★]
+- **병렬 구조:** and/but으로 연결된 동사들이 서로 병렬인지 확인하세요.
+- **5형식 동사(help, make, let 등):** - `help` 뒤에 `to-v`나 `원형부정사`가 오면, 문맥에 따라 **[목적어(O)]**인지, 목적어가 생략된 **[목적격 보어(OC)]**인지 꼼꼼히 구별하세요.
+  - 예: "helped to reshape"는 문맥상 "helped (people) to reshape"로 보아 [OC]로 분석하거나, 준동사구의 성격을 명확히 설명하세요.
 
 [출력 포맷 예시]
 
 1. **[직독직해]**
-   - Studying English hard / is important / for your future.
-   - 영어를 열심히 공부하는 것은 / 중요하다 / 너의 미래를 위해.
+   - The great generative ideas / in human history / have transformed / the world view.
+   - 위대한 생성적 아이디어들은 / 인류 역사상 / 변화시켰다 / 세계관을.
 
 2. **[구문 분석]**
-   - [S] Studying English hard
-   - [V] is
-   - [C] important
-   - (M) for your future
+   - [S] The great generative ideas
+   - [V] have transformed
+   - [O] the world view
 
-3. **[상세 설명]** (핵심만 간략히)
-   - **주어(S):** Studying English hard (동명사구, 단수 취급)
-   - **동사(V):** is (be동사 현재형)
-   - **보어(C):** important (형용사)
-   - **수식어:** for your future (전치사구)
+3. **[상세 설명]** (핵심만)
+   - **주어(S):** The great generative ideas (핵심 주어: ideas)
+   - **동사(V):** have transformed (현재완료)
+   - **목적어(O):** the world view
 
-4. **[핵심 문법]**
-   - **동명사 주어:** '~하는 것'으로 해석하며, 항상 **단수 취급**함.
+4. **[핵심 문법]** (한 줄 요약)
+   - **현재완료:** 과거의 일이 현재까지 영향을 미침.
 """
 
-# (3) Gemini 연결 & [중요] 안전 필터 해제
+# (3) Gemini 연결 & 안전 필터 해제
 if not api_key:
     st.warning("선생님이 아직 API 키를 입력하지 않으셨습니다.")
     st.stop()
 
-# ★★★ 안전 설정 추가된 부분 ★★★
+# 안전 필터 해제 (중단 방지)
 safety_settings = [
     {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
     {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
@@ -180,7 +183,6 @@ safety_settings = [
 
 genai.configure(api_key=api_key)
 try:
-    # 모델 생성 시 safety_settings 적용
     model = genai.GenerativeModel(MODEL_NAME, safety_settings=safety_settings)
 except:
     st.error(f"모델 설정 오류: {MODEL_NAME}을 찾을 수 없습니다.")
@@ -188,7 +190,8 @@ except:
 
 # (4) 채팅 기록 초기화
 if "messages" not in st.session_state:
-    welcome_msg = f"안녕! 👋 {student_name}야. 1번 학습지 내용 이해 5번 문제, 요약문 빈칸 채우기 맞지? 같이 꼼꼼하게 풀어보자!"
+    # [인사말 수정] 이름 넣고, 범용적인 인사말로 변경
+    welcome_msg = f"안녕! 👋 {student_name}야. 영어 공부하다 막히는 거 있으면 언제든 물어봐! 내가 도와줄게. 😎"
     st.session_state["messages"] = [{"role": "assistant", "content": welcome_msg}]
 
 # (5) 대화 화면 출력
@@ -216,7 +219,6 @@ if prompt := st.chat_input("영어 문장을 입력하세요..."):
         message_placeholder = st.empty()
         full_response = ""
         try:
-            # 안전 필터 때문에 멈추지 않도록 설정 적용됨
             responses = model.generate_content(full_prompt, stream=True)
             for response in responses:
                 if response.text:
@@ -227,8 +229,7 @@ if prompt := st.chat_input("영어 문장을 입력하세요..."):
             st.session_state.messages.append({"role": "assistant", "content": full_response})
 
         except Exception as e:
-            # 안전 관련 에러가 발생해도 부드럽게 넘어가도록 처리
             if "finish_reason" in str(e) or "valid Part" in str(e):
-                 st.error("AI가 답변을 주저하고 있어요. 질문을 조금 더 부드럽게 바꿔보거나 다시 시도해주세요! (안전 필터)")
+                 st.error("AI가 답변을 주저하고 있어요. 질문을 조금 더 부드럽게 바꿔보거나 다시 시도해주세요!")
             else:
                  st.error(f"오류가 발생했습니다: {e}")
