@@ -8,8 +8,8 @@ import datetime
 # [설정] 기본 환경 설정
 # =========================================================
 MODEL_NAME = "models/gemini-pro-latest" 
-TARGET_FILES = ["lesson.pdf"]  # PDF 파일 이름
-TEACHER_PASSWORD = "takeit"    # 선생님 비밀번호
+TARGET_FILES = ["lesson.pdf"]  
+TEACHER_PASSWORD = "takeit"    
 
 st.set_page_config(page_title="Muna E. Teacher", page_icon="🏫")
 
@@ -74,6 +74,7 @@ if "student_info" not in st.session_state:
             elif class_num and number and name:
                 full_info = f"{grade} {class_num}반 {number}번 {name}"
                 st.session_state["student_info"] = full_info
+                st.session_state["student_name"] = name 
                 st.rerun()
             else:
                 st.error("빈칸을 모두 채워주세요!")
@@ -110,6 +111,7 @@ if st.session_state["student_info"] == "TEACHER_MODE":
 # 4. 학생 전용 화면 (영어 선생님 챗봇)
 # =========================================================
 student_info = st.session_state["student_info"]
+student_name = st.session_state.get("student_name", "친구")
 
 st.title("🏫 Muna E. Teacher")
 st.caption(f"로그인 정보: {student_info}")
@@ -126,7 +128,7 @@ for file_name in TARGET_FILES:
         except:
             pass 
 
-# (2) [핵심] 챗봇 성격 설정 (여기가 길어서 잘릴 수 있으니 주의하세요!)
+# (2) 챗봇 성격 설정 (간결 모드 적용!)
 if pdf_content:
     context_data = f"[수업 자료 참고]\n{pdf_content}"
 else:
@@ -134,14 +136,14 @@ else:
 
 SYSTEM_PROMPT = f"""
 [역할]
-당신은 고등학교 1학년을 위한 꼼꼼한 '영어 구문 분석 전문가' Muna E. Teacher입니다.
+당신은 고등학교 1학년을 위한 '영어 구문 분석 전문가' Muna E. Teacher입니다.
 {context_data}
 
 [절대 규칙]
-학생이 영어 문장을 질문하면, **반드시 아래의 4단계 포맷을 엄격하게 지켜서** 답변하세요.
-설명은 친절하고 구체적이어야 합니다.
+1. 학생이 영어 문장을 질문하면, **반드시 아래 4단계 포맷**을 지키세요.
+2. **설명은 핵심만 간결하게(단답형)** 작성하세요. 길게 서술하지 마세요.
 
-[출력 포맷 예시] (이 형식을 그대로 따를 것)
+[출력 포맷 예시]
 
 1. **[직독직해]**
    - Studying English hard / is important / for your future.
@@ -153,16 +155,15 @@ SYSTEM_PROMPT = f"""
    - [C] important
    - (M) for your future
 
-3. **[상세 설명]**
-   - 주어(S): Studying English hard (동명사구 주어)
-   - 동사(V): is (be동사, 현재시제)
-   - 보어(C): important (형용사)
-   - 전치사구: (for your future)는 '너의 미래를 위해'라는 뜻으로 형용사 important를 수식하거나 문장 전체를 보충합니다.
+3. **[상세 설명]** (핵심만 간략히)
+   - **주어(S):** Studying English hard (동명사구, 단수 취급)
+   - **동사(V):** is (be동사 현재형)
+   - **보어(C):** important (형용사)
+   - **수식어:** for your future (전치사구)
 
 4. **[핵심 문법]**
-   - 동명사 주어: Studying처럼 동사에 -ing를 붙여 주어로 쓰면 '~하는 것'으로 해석합니다. 동명사 주어는 무조건 **단수 취급**하므로 동사 자리에 are가 아닌 is가 왔습니다.
-""" 
-# 👆 위 따옴표 3개(""")가 꼭 있어야 합니다!
+   - **동명사 주어:** '~하는 것'으로 해석하며, 항상 **단수 취급**함.
+"""
 
 # (3) Gemini 연결
 if not api_key:
@@ -178,7 +179,8 @@ except:
 
 # (4) 채팅 기록 초기화
 if "messages" not in st.session_state:
-    st.session_state["messages"] = [{"role": "assistant", "content": "Hi there! 👋 해석이 안 되거나 분석하고 싶은 영어 문장을 입력해봐!"}]
+    welcome_msg = f"안녕! 👋 {student_name}야. 1번 학습지 내용 이해 5번 문제, 요약문 빈칸 채우기 맞지? 같이 꼼꼼하게 풀어보자!"
+    st.session_state["messages"] = [{"role": "assistant", "content": welcome_msg}]
 
 # (5) 대화 화면 출력
 for msg in st.session_state.messages:
