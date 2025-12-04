@@ -12,6 +12,19 @@ TARGET_FILES = ["lesson.pdf"]
 
 st.set_page_config(page_title="Muna E. Teacher", page_icon="🏫")
 
+# =========================================================
+# [꿀팁] 지저분한 메뉴와 'Manage app' 버튼 숨기기 (CSS)
+# =========================================================
+hide_streamlit_style = """
+<style>
+#MainMenu {visibility: hidden;}
+header {visibility: hidden;}
+footer {visibility: hidden;}
+.stDeployButton {display:none;}
+</style>
+"""
+st.markdown(hide_streamlit_style, unsafe_allow_html=True)
+
 # 1. 사이드바: API 키 관리
 with st.sidebar:
     if "GEMINI_API_KEY" in st.secrets:
@@ -144,4 +157,5 @@ if prompt := st.chat_input("질문을 입력하세요"):
             st.session_state.messages.append({"role": "assistant", "content": full_response})
         except Exception as e:
             st.error(f"오류: {e}")
+
 
