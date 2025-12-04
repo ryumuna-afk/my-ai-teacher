@@ -1,58 +1,57 @@
 import streamlit as st
 import google.generativeai as genai
-import PyPDF2 # PDF를 읽는 도구
+import PyPDF2
+import os
 
-# ==========================================
-# [제목 수정] 여기에 원하시는 이름을 넣었습니다!
-# ==========================================
 st.title("📄 Muna E. Teacher")
 
-# 1. 사이드바: API 키 입력 & 파일 업로드
+# =========================================================
+# [설정] 여기에 GitHub에 올린 파일명을 정확히 적어주세요!
+# =========================================================
+TARGET_FILE_NAME = "lesson.pdf" 
+
+# 1. 사이드바: API 키 관리
 with st.sidebar:
-    # API 키 처리
     if "GEMINI_API_KEY" in st.secrets:
         api_key = st.secrets["GEMINI_API_KEY"]
     else:
         api_key = st.text_input("Gemini API Key", type="password")
-    
-    # PDF 파일 업로드 기능
-    uploaded_file = st.file_uploader("수업 자료(PDF)를 올려주세요", type=["pdf"])
-    st.info("👆 교과서 본문이나 유인물 PDF를 올리면 AI가 내용을 학습합니다.")
 
-# 2. 업로드된 PDF 내용 읽기
+# 2. 서버에 있는 PDF 파일 몰래 읽기
 pdf_content = ""
 
-if uploaded_file is not None:
+# 파일이 진짜 있는지 확인
+if os.path.exists(TARGET_FILE_NAME):
     try:
-        pdf_reader = PyPDF2.PdfReader(uploaded_file)
-        for page in pdf_reader.pages:
-            pdf_content += page.extract_text() + "\n"
-        st.success(f"✅ PDF 학습 완료! (총 {len(pdf_reader.pages)}페이지)")
+        # 업로드 버튼 대신, 서버에 있는 파일을 직접 엽니다
+        with open(TARGET_FILE_NAME, "rb") as f:
+            pdf_reader = PyPDF2.PdfReader(f)
+            for page in pdf_reader.pages:
+                pdf_content += page.extract_text() + "\n"
+        # 학생들 눈에는 안 보이지만 학습 완료 메시지 띄우기 (선택)
+        # st.success(f"✅ 선생님이 준비한 학습 자료가 로딩되었습니다!")
     except Exception as e:
-        st.error(f"PDF를 읽는 중 오류가 났어요: {e}")
+        st.error(f"파일을 읽는 중 에러가 났어요: {e}")
+else:
+    st.error(f"⚠️ '{TARGET_FILE_NAME}' 파일을 찾을 수 없습니다. GitHub에 파일을 올리셨나요?")
 
-# 3. 챗봇 성격 설정 (PDF 내용이 있으면 반영)
+# 3. 챗봇 성격 설정
 if pdf_content:
     SYSTEM_PROMPT = f"""
     [당신의 역할]
     당신은 고등학교 영어 선생님 'Muna E. Teacher'입니다. 
-    아래 제공된 [PDF 수업 자료]를 바탕으로 학생의 질문에 답변하세요.
+    이미 학습된 [수업 자료]를 바탕으로 학생의 질문에 답변하세요.
 
-    [PDF 수업 자료]
+    [수업 자료]
     {pdf_content}
 
     [행동 지침]
-    1. 학생 질문이 [PDF 수업 자료]와 관련 있다면, 그 내용을 바탕으로 상세히 설명하세요.
-    2. 문법 설명은 한국어로, 예시는 자료 문장을 인용하세요.
-    3. 자료에 없는 내용을 물어보면 "그건 업로드된 PDF에 없는 내용이야."라고 답하세요.
+    1. 학생의 질문이 [수업 자료] 내용과 관련 있으면 상세히 설명하세요.
+    2. 자료에 없는 엉뚱한 질문을 하면 "오늘 수업 내용과 관련 없는 질문이구나. 수업 내용에 집중해볼까?"라고 부드럽게 넘기세요.
+    3. 한국어로 설명하되, 중요한 영어 표현은 원문을 인용하세요.
     """
 else:
-    # 파일이 없을 때의 기본 모드
-    SYSTEM_PROMPT = """
-    당신은 친절한 영어 선생님 'Muna E. Teacher'입니다. 
-    현재 업로드된 자료가 없으므로, 일반적인 영어 지식으로 답변하세요.
-    학생들에게 "좌측 사이드바에 PDF 자료를 올려주세요"라고 안내하면 좋습니다.
-    """
+    SYSTEM_PROMPT = "자료가 로딩되지 않았습니다. 선생님께 문의하세요."
 
 # 4. Gemini 연결
 if not api_key:
@@ -64,7 +63,7 @@ model = genai.GenerativeModel("models/gemini-pro-latest")
 
 # 5. 대화 기록 초기화
 if "messages" not in st.session_state:
-    st.session_state["messages"] = [{"role": "assistant", "content": "Hello! I am Muna E. Teacher. PDF 자료를 올리고 질문해 주세요!"}]
+    st.session_state["messages"] = [{"role": "assistant", "content": "Hi! 오늘 수업 내용에 대해 궁금한 게 있니?"}]
 
 # 6. 화면 출력
 for msg in st.session_state.messages:
@@ -80,3 +79,19 @@ if prompt := st.chat_input("질문을 입력하세요"):
     recent_messages = st.session_state.messages[-10:] 
     for msg in recent_messages:
         role = "User" if msg["role"] == "user" else "Model"
+        full_prompt += f"{role}: {msg['content']}\n"
+    
+    # 답변 생성
+    with st.chat_message("assistant"):
+        message_placeholder = st.empty()
+        full_response = ""
+        try:
+            responses = model.generate_content(full_prompt, stream=True)
+            for response in responses:
+                if response.text:
+                    full_response += response.text
+                    message_placeholder.markdown(full_response + "▌")
+            message_placeholder.markdown(full_response)
+            st.session_state.messages.append({"role": "assistant", "content": full_response})
+        except Exception as e:
+            st.error(f"오류: {e}")
