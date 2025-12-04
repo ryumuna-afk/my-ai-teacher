@@ -25,7 +25,7 @@ SYSTEM_PROMPT = f"""
 5. 모르는 내용은 솔직히 모른다고 하고, 함께 찾아보자고 격려하세요.
 """
 
-st.title("🇺🇸 우리 반 영어 쌤 (AI)")
+st.title("Muna E. Teacher (AI)")
 
 # 1. 금고에서 키 꺼내기
 try:
