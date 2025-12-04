@@ -3,7 +3,7 @@ import google.generativeai as genai
 import PyPDF2
 import os
 import datetime
-import random # [추가] 랜덤 기능을 위해 필요합니다
+import random 
 
 # =========================================================
 # [설정] 기본 환경 설정
@@ -36,7 +36,7 @@ def get_shared_logs():
 chat_logs = get_shared_logs()
 
 # =========================================================
-# 1. 사이드바 (API 키 설정)
+# 1. 사이드바 (API 키 설정 및 공지사항)
 # =========================================================
 with st.sidebar:
     if "GEMINI_API_KEY" in st.secrets:
@@ -44,10 +44,11 @@ with st.sidebar:
     else:
         api_key = st.text_input("Gemini API Key를 입력하세요", type="password")
     
-    # [추가] 사이드바 하단에도 고정적으로 경고 문구 표시
     st.divider()
-    st.caption("⚠️ **주의사항**")
-    st.caption("AI는 실수를 할 수 있습니다. 중요한 내용은 반드시 교과서나 선생님께 확인하세요.")
+    st.info("📢 **학습 규칙**")
+    st.caption("1. 정답만 물어보면 안 알려줌! 🙅‍♂️")
+    st.caption("2. 한 번에 한 문제씩만 질문하기")
+    st.caption("3. 니가 먼저 풀어보고 모르는 걸 물어보기")
 
 # =========================================================
 # 2. 로그인 화면
@@ -134,7 +135,7 @@ for file_name in TARGET_FILES:
         except:
             pass 
 
-# (2) 챗봇 성격 설정
+# (2) 챗봇 성격 설정 (여기에 선생님의 교육 철학을 넣었습니다!)
 if pdf_content:
     context_data = f"[수업 자료 참고]\n{pdf_content}"
 else:
@@ -145,13 +146,18 @@ SYSTEM_PROMPT = f"""
 당신은 고등학교 1학년을 위한 '영어 구문 분석 전문가' Muna E. Teacher입니다.
 {context_data}
 
-[절대 규칙]
-1. 학생이 영어 문장을 질문하면, **반드시 아래 4단계 포맷**을 지키세요.
+[행동 지침 - 정답 유출 방지 ★★★]
+1. 학생이 "정답 다 알려줘"라고 하면 **정중히 거절**하세요. "공부는 스스로 해야 내 것이 되는 거야! 한 문제씩 같이 풀어볼까?"라고 유도하세요.
+2. 정답을 바로 알려주기보다, 학생이 **먼저 어떻게 생각했는지** 물어보거나 **힌트**를 줘서 스스로 풀게 만드세요.
+3. 문제는 **한 번에 하나씩만** 다룹니다.
+
+[구문 분석 규칙]
+1. 학생이 특정 문장을 질문하면, **반드시 아래 4단계 포맷**을 지키세요.
 2. 설명은 **핵심만 간결하게(단답형)** 작성하세요.
 
-[분석 시 주의사항 ★★★]
+[분석 시 주의사항]
 - **병렬 구조:** and/but으로 연결된 동사들이 서로 병렬인지 확인하세요.
-- **5형식 동사(help, make, let 등):** help 뒤에 목적어가 생략된 [OC] 구조인지 꼼꼼히 구별하세요.
+- **5형식 동사(help 등):** 목적격 보어[OC] 구조를 꼼꼼히 구별하세요.
 
 [출력 포맷 예시]
 1. **[직독직해]** (끊어 읽기 해석)
@@ -181,7 +187,8 @@ except:
 
 # (4) 채팅 기록 초기화
 if "messages" not in st.session_state:
-    welcome_msg = f"안녕! 👋 {student_name}야. 영어 공부하다 막히는 거 있으면 언제든 물어봐! 내가 도와줄게. 😎"
+    # [인사말 수정] 교육 철학을 담은 멘트로 변경!
+    welcome_msg = f"안녕! 👋 {student_name}야. 영어 공부하다 막히는 거 있으면 언제든 물어봐!\n(단, 정답만 쏙 베껴가는 건 안 돼! 😜 하나씩 같이 고민해보자.)"
     st.session_state["messages"] = [{"role": "assistant", "content": welcome_msg}]
 
 # (5) 대화 화면 출력
@@ -215,9 +222,9 @@ if prompt := st.chat_input("영어 문장을 입력하세요..."):
                     full_response += response.text
                     message_placeholder.markdown(full_response + "▌")
             
-            # [추가된 기능] 가끔씩(30% 확률) 경고 문구 추가하기
-            if random.random() < 0.3:
-                disclaimer = "\n\n---\n💡 **[Check!]** AI는 실수를 할 수 있어요. 중요한 내용은 교과서와 꼭 비교해보세요! 👀"
+            # 가끔씩 뜨는 경고 문구 (빈도 조절 가능)
+            if random.random() < 0.2: # 20% 확률
+                disclaimer = "\n\n---\n💡 **[Self-Check]** 스스로 고민해보고, 이해 안 되는 부분만 다시 물어보는 게 실력 향상의 지름길! 🚀"
                 full_response += disclaimer
             
             message_placeholder.markdown(full_response)
