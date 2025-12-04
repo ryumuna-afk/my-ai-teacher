@@ -4,16 +4,13 @@ import PyPDF2
 import os
 import datetime
 
-st.title("📄 Muna E. Teacher")
-
 # =========================================================
-# [설정 1] ★여기를 고쳐주세요★ 아까 본 모델 이름을 따옴표 안에 넣으세요
-# 예시: "models/gemini-2.0-flash-exp" 또는 "models/gemini-2.0-pro" 등
+# [설정] 모델 및 파일 이름
 # =========================================================
 MODEL_NAME = "models/gemini-2.0-flash" 
-
-# [설정 2] GitHub에 올린 PDF 파일 이름
 TARGET_FILES = ["lesson.pdf"] 
+
+st.set_page_config(page_title="Muna E. Teacher", page_icon="🏫")
 
 # 1. 사이드바: API 키 관리
 with st.sidebar:
@@ -21,6 +18,47 @@ with st.sidebar:
         api_key = st.secrets["GEMINI_API_KEY"]
     else:
         api_key = st.text_input("Gemini API Key", type="password")
+
+# =========================================================
+# [기능 1] 입장 전 정보 입력받기 (학년/반/번호/이름)
+# =========================================================
+if "student_info" not in st.session_state:
+    st.title("🔒 수업 입장하기")
+    st.write("학생 정보를 정확히 입력해야 입장할 수 있습니다.")
+    
+    with st.form("login_form"):
+        # 보기 좋게 3칸으로 나누기 (학년, 반, 번호)
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            grade = st.selectbox("학년", ["1학년", "2학년", "3학년"])
+        with col2:
+            class_num = st.text_input("반", placeholder="예: 3")
+        with col3:
+            number = st.text_input("번호", placeholder="예: 15")
+            
+        name = st.text_input("이름", placeholder="예: 홍길동")
+        
+        submit_button = st.form_submit_button("수업 시작하기")
+        
+        if submit_button:
+            # 빈칸이 하나라도 있으면 안 됨
+            if class_num.strip() and number.strip() and name.strip():
+                # 정보를 합쳐서 저장 (예: "1학년 3반 15번 홍길동")
+                full_info = f"{grade} {class_num}반 {number}번 {name}"
+                st.session_state["student_info"] = full_info
+                st.rerun() # 새로고침
+            else:
+                st.error("빈칸을 모두 채워주세요!")
+    
+    st.stop() # 입력 전까지 멈춤
+
+# =========================================================
+# 로그인 통과 후 화면
+# =========================================================
+student_info = st.session_state["student_info"]
+st.title(f"🏫 Muna E. Teacher")
+st.caption(f"로그인 정보: {student_info}") # 상단에 작게 표시
 
 # 2. 서버에 있는 PDF 파일들 읽기
 pdf_content = ""
@@ -53,17 +91,15 @@ if not api_key:
     st.stop()
 
 genai.configure(api_key=api_key)
-
-# ★ 선생님이 적은 모델 이름을 여기서 사용합니다
 try:
     model = genai.GenerativeModel(MODEL_NAME)
 except Exception as e:
-    st.error(f"모델 이름({MODEL_NAME})이 틀린 것 같아요. 정확한 이름을 확인해주세요!")
+    st.error(f"모델 이름 오류: {MODEL_NAME}")
     st.stop()
 
 # 5. 대화 기록 초기화
 if "messages" not in st.session_state:
-    st.session_state["messages"] = [{"role": "assistant", "content": "Hi! 질문이 있니?"}]
+    st.session_state["messages"] = [{"role": "assistant", "content": f"반가워, {student_info} 학생! 무엇을 도와줄까?"}]
 
 # 6. 화면 출력
 for msg in st.session_state.messages:
@@ -74,9 +110,9 @@ if prompt := st.chat_input("질문을 입력하세요"):
     st.chat_message("user").write(prompt)
     st.session_state.messages.append({"role": "user", "content": prompt})
 
-    # [CCTV 기능] 서버 로그에 질문 기록
-    now = datetime.datetime.now().strftime("%H시 %M분")
-    print(f"\n[👀 학생 질문 - {now}] {prompt}")
+    # [CCTV 기능] 예: "[👀 1학년 3반 15번 홍길동 - 10:45:12] 질문내용"
+    now = datetime.datetime.now().strftime("%H:%M:%S")
+    print(f"\n[👀 {student_info} - {now}] {prompt}") 
 
     # 문맥 정리
     full_prompt = SYSTEM_PROMPT + "\n\n"
@@ -99,4 +135,3 @@ if prompt := st.chat_input("질문을 입력하세요"):
             st.session_state.messages.append({"role": "assistant", "content": full_response})
         except Exception as e:
             st.error(f"오류: {e}")
-
