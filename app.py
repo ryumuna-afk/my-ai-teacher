@@ -1,81 +1,82 @@
 import streamlit as st
 import google.generativeai as genai
-from datetime import datetime
+import PyPDF2 # PDF를 읽는 도구
 
 # ==========================================
-# [설정 0] 현재 시간과 계절 계산
+# [제목 수정] 여기에 원하시는 이름을 넣었습니다!
 # ==========================================
-now = datetime.now()
-current_date = now.strftime("%Y년 %m월 %d일")
+st.title("📄 Muna E. Teacher")
 
-# ==========================================
-# [설정 1] 영어 선생님 페르소나 (성격) 설정
-# ==========================================
-SYSTEM_PROMPT = f"""
-[기본 정보]
-- 오늘은 {current_date}입니다.
-- 당신은 고등학교 1학년 학생들을 가르치는 열정적이고 친절한 '영어 선생님'입니다.
-- 인터넷 검색은 할 수 없습니다.
+# 1. 사이드바: API 키 입력 & 파일 업로드
+with st.sidebar:
+    # API 키 처리
+    if "GEMINI_API_KEY" in st.secrets:
+        api_key = st.secrets["GEMINI_API_KEY"]
+    else:
+        api_key = st.text_input("Gemini API Key", type="password")
+    
+    # PDF 파일 업로드 기능
+    uploaded_file = st.file_uploader("수업 자료(PDF)를 올려주세요", type=["pdf"])
+    st.info("👆 교과서 본문이나 유인물 PDF를 올리면 AI가 내용을 학습합니다.")
 
-[행동 지침]
-1. 설명은 '한국어'로 하되, 예문은 반드시 '영어'로 보여주세요.
-2. 학생이 문법이나 단어를 물어보면, 고등학생 수준에 맞는 유의어(Synonym)나 반의어를 하나씩 덧붙여 주세요. (꿀팁처럼!)
-3. 학생이 영어 문장을 입력하면, 더 자연스러운 표현으로 교정(Correction)해주고 이유를 설명하세요.
-4. 말투는 친근하게 해요. (예: "이건 시험에 자주 나오는 거야!", "아주 좋은 질문이야! 👍")
-5. 모르는 내용은 솔직히 모른다고 하고, 함께 찾아보자고 격려하세요.
-"""
+# 2. 업로드된 PDF 내용 읽기
+pdf_content = ""
 
-st.title("Muna E. Teacher (AI)")
+if uploaded_file is not None:
+    try:
+        pdf_reader = PyPDF2.PdfReader(uploaded_file)
+        for page in pdf_reader.pages:
+            pdf_content += page.extract_text() + "\n"
+        st.success(f"✅ PDF 학습 완료! (총 {len(pdf_reader.pages)}페이지)")
+    except Exception as e:
+        st.error(f"PDF를 읽는 중 오류가 났어요: {e}")
 
-# 1. 금고에서 키 꺼내기
-try:
-    api_key = st.secrets["GEMINI_API_KEY"]
-except FileNotFoundError:
-    st.error("서버에 키가 없습니다. Streamlit Secrets를 확인하세요.")
+# 3. 챗봇 성격 설정 (PDF 내용이 있으면 반영)
+if pdf_content:
+    SYSTEM_PROMPT = f"""
+    [당신의 역할]
+    당신은 고등학교 영어 선생님 'Muna E. Teacher'입니다. 
+    아래 제공된 [PDF 수업 자료]를 바탕으로 학생의 질문에 답변하세요.
+
+    [PDF 수업 자료]
+    {pdf_content}
+
+    [행동 지침]
+    1. 학생 질문이 [PDF 수업 자료]와 관련 있다면, 그 내용을 바탕으로 상세히 설명하세요.
+    2. 문법 설명은 한국어로, 예시는 자료 문장을 인용하세요.
+    3. 자료에 없는 내용을 물어보면 "그건 업로드된 PDF에 없는 내용이야."라고 답하세요.
+    """
+else:
+    # 파일이 없을 때의 기본 모드
+    SYSTEM_PROMPT = """
+    당신은 친절한 영어 선생님 'Muna E. Teacher'입니다. 
+    현재 업로드된 자료가 없으므로, 일반적인 영어 지식으로 답변하세요.
+    학생들에게 "좌측 사이드바에 PDF 자료를 올려주세요"라고 안내하면 좋습니다.
+    """
+
+# 4. Gemini 연결
+if not api_key:
+    st.warning("API 키가 필요합니다.")
     st.stop()
 
 genai.configure(api_key=api_key)
 model = genai.GenerativeModel("models/gemini-pro-latest")
 
-# 2. 대화 기록 초기화
+# 5. 대화 기록 초기화
 if "messages" not in st.session_state:
-    st.session_state["messages"] = [{"role": "assistant", "content": f"Hi there! 👋 영어 공부하다 막히는 거 있니? 문법, 독해, 작문 다 물어봐!"}]
+    st.session_state["messages"] = [{"role": "assistant", "content": "Hello! I am Muna E. Teacher. PDF 자료를 올리고 질문해 주세요!"}]
 
-# 3. 이전 대화 화면에 출력
+# 6. 화면 출력
 for msg in st.session_state.messages:
     st.chat_message(msg["role"]).write(msg["content"])
 
-# 4. 사용자 입력 처리
-if prompt := st.chat_input("영어 질문이나 해석하고 싶은 문장을 입력하세요"):
-    # 사용자 메시지 표시 & 저장
+# 7. 사용자 입력 처리
+if prompt := st.chat_input("질문을 입력하세요"):
     st.chat_message("user").write(prompt)
     st.session_state.messages.append({"role": "user", "content": prompt})
 
     # 문맥 정리
     full_prompt = SYSTEM_PROMPT + "\n\n"
-    
-    # 최근 대화 10개만 기억
     recent_messages = st.session_state.messages[-10:] 
-    
     for msg in recent_messages:
         role = "User" if msg["role"] == "user" else "Model"
-        full_prompt += f"{role}: {msg['content']}\n"
-    
-    # 답변 생성 (타자 치는 효과)
-    with st.chat_message("assistant"):
-        message_placeholder = st.empty()
-        full_response = ""
-
-        try:
-            responses = model.generate_content(full_prompt, stream=True)
-            
-            for response in responses:
-                if response.text:
-                    full_response += response.text
-                    message_placeholder.markdown(full_response + "▌")
-            
-            message_placeholder.markdown(full_response)
-            st.session_state.messages.append({"role": "assistant", "content": full_response})
-
-        except Exception as e:
-            st.error(f"오류가 났어요: {e}")
