@@ -13,13 +13,14 @@ TEACHER_PASSWORD = "takeit" # 선생님 비밀번호
 
 st.set_page_config(page_title="Muna E. Teacher", page_icon="🏫")
 
-# [디자인] 지저분한 메뉴와 푸터 숨기기 (학생들이 딴짓 못하게)
+# [디자인] 지저분한 메뉴와 푸터 숨기기 (통합)
 hide_streamlit_style = """
 <style>
 #MainMenu {visibility: hidden;}
 header {visibility: hidden;}
 footer {visibility: hidden;}
 .stDeployButton {display:none;}
+.block-container {padding-top: 2rem;}
 </style>
 """
 st.markdown(hide_streamlit_style, unsafe_allow_html=True)
@@ -34,10 +35,9 @@ def get_shared_logs():
 chat_logs = get_shared_logs()
 
 # =========================================================
-# 1. 사이드바 (API 키 설정만 남김)
+# 1. 사이드바 (API 키 설정)
 # =========================================================
 with st.sidebar:
-    # 초기화 버튼은 삭제했습니다!
     if "GEMINI_API_KEY" in st.secrets:
         api_key = st.secrets["GEMINI_API_KEY"]
     else:
@@ -48,24 +48,8 @@ with st.sidebar:
 # =========================================================
 if "student_info" not in st.session_state:
     st.title("🔒 수업 입장하기")
-    # ==========================================
-# [디자인] 지저분한 요소 숨기기 (CSS)
-# ==========================================
-hide_streamlit_style = """
-<style>
-    /* 맨 위 줄무늬(header)랑 메뉴 버튼 숨기기 */
-    header {visibility: hidden;}
     
-    /* 맨 아래 'Made with Streamlit' 푸터 숨기기 */
-    footer {visibility: hidden;}
-    
-    /* 모바일에서 보기 좋게 여백 조정 */
-    .block-container {
-        padding-top: 2rem;
-    }
-</style>
-"""
-st.markdown(hide_streamlit_style, unsafe_allow_html=True)
+    # (여기에 있던 중복된 CSS 코드를 삭제했습니다)
 
     with st.form("login_form"):
         col1, col2, col3 = st.columns(3)
@@ -199,7 +183,9 @@ if prompt := st.chat_input("질문을 입력하세요"):
                     message_placeholder.markdown(full_response + "▌")
             message_placeholder.markdown(full_response)
             
+            # [수정됨] 마지막 줄 완성
             st.session_state.messages.append({"role": "assistant", "content": full_response})
-            
+
         except Exception as e:
-            st.error(f"오류가 났어요: {e}")
+            st.error(f"에러 발생: {e}")
+
