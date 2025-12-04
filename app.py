@@ -33,7 +33,7 @@ with st.sidebar:
         api_key = st.text_input("Gemini API Key", type="password")
     
     st.divider()
-    # ★ 화면이 안 보일 때 누르는 비상 탈출 버튼 ★
+    # 화면이 안 보일 때 누르는 비상 탈출 버튼
     if st.button("🔄 초기화 (로그아웃)"):
         st.session_state.clear() # 모든 기억 삭제
         st.rerun() # 새로고침
@@ -57,7 +57,6 @@ if "student_info" not in st.session_state:
         name = st.text_input("이름", placeholder="이름 (선생님은 비밀번호 입력)")
         
         if st.form_submit_button("입장하기"):
-            # 공백 제거 (실수 방지)
             name = name.strip()
             class_num = class_num.strip()
             number = number.strip()
@@ -75,14 +74,14 @@ if "student_info" not in st.session_state:
             else:
                 st.error("빈칸을 모두 채워주세요!")
     
-    st.stop() # 여기서 멈춤 (로그인 안 하면 아래 내용 안 보여줌)
+    st.stop() # 로그인 안 하면 여기서 멈춤
 
 # =========================================================
 # 3. 교사 전용 화면 (CCTV)
 # =========================================================
 if st.session_state["student_info"] == "TEACHER_MODE":
     st.title("👨‍🏫 교사 전용 대시보드")
-    st.success(f"관리자 모드 접속 완료 ({TEACHER_PASSWORD})")
+    st.success(f"관리자 모드 접속 완료")
     
     col_a, col_b = st.columns([4, 1])
     with col_a:
@@ -97,7 +96,7 @@ if st.session_state["student_info"] == "TEACHER_MODE":
         for log in reversed(chat_logs):
             # log = [시간, 학생정보, 질문]
             st.markdown(f"**⏰ {log[0]} | 👤 {log[1]}**")
-            st.info(f"{log[2]}") # 질문 내용을 파란 박스에 표시
+            st.info(f"{log[2]}")
     else:
         st.write("아직 질문이 없습니다.")
         
@@ -121,7 +120,7 @@ for file_name in TARGET_FILES:
                 for page in pdf_reader.pages:
                     pdf_content += page.extract_text() + "\n"
         except:
-            pass # 에러 나도 조용히 넘어감
+            pass 
 
 # 성격 설정
 if pdf_content:
@@ -135,7 +134,7 @@ else:
 
 # Gemini 연결
 if not api_key:
-    st.error("API 키가 없습니다. 선생님께 말씀드리세요.")
+    st.error("API 키가 없습니다.")
     st.stop()
 
 genai.configure(api_key=api_key)
@@ -155,4 +154,31 @@ for msg in st.session_state.messages:
 # 입력 처리
 if prompt := st.chat_input("질문을 입력하세요"):
     st.chat_message("user").write(prompt)
-    st.session_state.messages.append({"
+    st.session_state.messages.append({"role": "user", "content": prompt})
+
+    # [로그 저장]
+    now = datetime.datetime.now().strftime("%H:%M:%S")
+    chat_logs.append([now, student_info, prompt]) 
+    
+    full_prompt = SYSTEM_PROMPT + "\n\n"
+    recent_messages = st.session_state.messages[-10:]
+    for msg in recent_messages:
+        role = "User" if msg["role"] == "user" else "Model"
+        full_prompt += f"{role}: {msg['content']}\n"
+    
+    with st.chat_message("assistant"):
+        message_placeholder = st.empty()
+        full_response = ""
+        try:
+            responses = model.generate_content(full_prompt, stream=True)
+            for response in responses:
+                if response.text:
+                    full_response += response.text
+                    message_placeholder.markdown(full_response + "▌")
+            message_placeholder.markdown(full_response)
+            
+            # ★ 여기가 문제였던 부분입니다! 따옴표를 확실히 닫았습니다. ★
+            st.session_state.messages.append({"role": "assistant", "content": full_response})
+            
+        except Exception as e:
+            st.error(f"오류가 났어요: {e}")
