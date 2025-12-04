@@ -2,14 +2,14 @@ import streamlit as st
 import google.generativeai as genai
 import PyPDF2
 import os
+import datetime # 시간 기록용
 
 st.title("📄 Muna E. Teacher")
 
 # =========================================================
 # [설정] 읽어야 할 파일들의 이름을 리스트(목록)로 적으세요!
-# 따옴표 안에 깃허브에 올린 파일명을 정확히 적고, 쉼표(,)로 구분합니다.
 # =========================================================
-TARGET_FILES = ["lesson.pdf", "reading.pdf"] 
+TARGET_FILES = ["lesson.pdf"] 
 
 # 1. 사이드바: API 키 관리
 with st.sidebar:
@@ -18,11 +18,8 @@ with st.sidebar:
     else:
         api_key = st.text_input("Gemini API Key", type="password")
 
-# 2. 서버에 있는 PDF 파일들 몽땅 읽기
+# 2. 서버에 있는 PDF 파일들 읽기
 pdf_content = ""
-read_files_count = 0
-
-# 리스트에 있는 파일들을 하나씩 꺼내서 읽습니다
 for file_name in TARGET_FILES:
     if os.path.exists(file_name):
         try:
@@ -31,37 +28,20 @@ for file_name in TARGET_FILES:
                 file_text = ""
                 for page in pdf_reader.pages:
                     file_text += page.extract_text() + "\n"
-                
-                # AI가 어떤 파일 내용인지 알 수 있게 파일 이름표를 붙여줍니다
                 pdf_content += f"\n--- [파일: {file_name}] ---\n{file_text}\n"
-                read_files_count += 1
-        except Exception as e:
-            st.error(f"⚠️ '{file_name}' 읽기 실패: {e}")
-    else:
-        # 파일이 없으면 경고 메시지 (학생에겐 안 보임, 로그용)
-        print(f"파일을 찾을 수 없음: {file_name}")
+        except Exception:
+            pass # 에러 무시
 
 # 3. 챗봇 성격 설정
 if pdf_content:
     SYSTEM_PROMPT = f"""
     [당신의 역할]
     당신은 고등학교 영어 선생님 'Muna E. Teacher'입니다. 
-    아래 제공된 [수업 자료들]을 모두 읽고 학생의 질문에 답변하세요.
-
-    [수업 자료들]
-    {pdf_content}
-
-    [행동 지침]
-    1. 학생의 질문이 [수업 자료들] 중 어디에 해당하는지 파악하고 상세히 설명하세요.
-    2. 학습지 문제에 대한 질문이면, 함께 제공된 지문(reading) 내용을 근거로 설명해 주세요.
-    3. 자료에 없는 질문을 하면 수업 내용에 집중하도록 유도하세요.
-    4. 한국어로 설명하되, 영어 지문의 핵심 문장은 원문을 인용하세요.
+    아래 [수업 자료]를 바탕으로 학생의 질문에 답변하세요.
+    [수업 자료] {pdf_content}
     """
-    # 성공 메시지 (선택 사항)
-    # st.success(f"✅ 총 {read_files_count}개의 파일을 학습했습니다!")
 else:
-    SYSTEM_PROMPT = "업로드된 자료가 하나도 없습니다. GitHub에 파일을 확인해주세요."
-    st.error("⚠️ GitHub에 파일이 없거나 이름을 잘못 적었습니다.")
+    SYSTEM_PROMPT = "자료가 없습니다."
 
 # 4. Gemini 연결
 if not api_key:
@@ -69,11 +49,11 @@ if not api_key:
     st.stop()
 
 genai.configure(api_key=api_key)
-model = genai.GenerativeModel("models/gemini-pro-latest")
+model = genai.GenerativeModel("gemini-1.5-flash") # 빠른 모델 추천
 
 # 5. 대화 기록 초기화
 if "messages" not in st.session_state:
-    st.session_state["messages"] = [{"role": "assistant", "content": "Hi! 지문이랑 학습지 다 읽고 왔어. 무엇을 도와줄까?"}]
+    st.session_state["messages"] = [{"role": "assistant", "content": "Hi! 질문이 있니?"}]
 
 # 6. 화면 출력
 for msg in st.session_state.messages:
@@ -83,6 +63,13 @@ for msg in st.session_state.messages:
 if prompt := st.chat_input("질문을 입력하세요"):
     st.chat_message("user").write(prompt)
     st.session_state.messages.append({"role": "user", "content": prompt})
+
+    # ★★★ [CCTV 핵심 코드] 선생님 몰래보기 기능 ★★★
+    # 학생이 질문을 던지면, 서버 기록(로그)에 시간을 찍어서 출력합니다.
+    now = datetime.datetime.now().strftime("%H시 %M분")
+    print(f"\n[👀 학생 질문 감지 - {now}] --------------------")
+    print(f"📝 내용: {prompt}")
+    print("--------------------------------------------------\n")
 
     # 문맥 정리
     full_prompt = SYSTEM_PROMPT + "\n\n"
