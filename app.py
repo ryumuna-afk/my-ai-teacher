@@ -48,7 +48,25 @@ with st.sidebar:
 # =========================================================
 if "student_info" not in st.session_state:
     st.title("🔒 수업 입장하기")
+    # ==========================================
+# [디자인] 지저분한 요소 숨기기 (CSS)
+# ==========================================
+hide_streamlit_style = """
+<style>
+    /* 맨 위 줄무늬(header)랑 메뉴 버튼 숨기기 */
+    header {visibility: hidden;}
     
+    /* 맨 아래 'Made with Streamlit' 푸터 숨기기 */
+    footer {visibility: hidden;}
+    
+    /* 모바일에서 보기 좋게 여백 조정 */
+    .block-container {
+        padding-top: 2rem;
+    }
+</style>
+"""
+st.markdown(hide_streamlit_style, unsafe_allow_html=True)
+
     with st.form("login_form"):
         col1, col2, col3 = st.columns(3)
         with col1:
