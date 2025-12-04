@@ -10,7 +10,7 @@ st.title("📄 Muna E. Teacher")
 # [설정 1] ★여기를 고쳐주세요★ 아까 본 모델 이름을 따옴표 안에 넣으세요
 # 예시: "models/gemini-2.0-flash-exp" 또는 "models/gemini-2.0-pro" 등
 # =========================================================
-MODEL_NAME = "models/gemini-2.0-flash-exp" 
+MODEL_NAME = "models/gemini-2.0-flash" 
 
 # [설정 2] GitHub에 올린 PDF 파일 이름
 TARGET_FILES = ["lesson.pdf"] 
@@ -99,3 +99,4 @@ if prompt := st.chat_input("질문을 입력하세요"):
             st.session_state.messages.append({"role": "assistant", "content": full_response})
         except Exception as e:
             st.error(f"오류: {e}")
+
