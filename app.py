@@ -13,8 +13,19 @@ TEACHER_PASSWORD = "takeit" # 선생님 비밀번호
 
 st.set_page_config(page_title="Muna E. Teacher", page_icon="🏫")
 
+# [디자인] 지저분한 메뉴와 푸터 숨기기 (학생들이 딴짓 못하게)
+hide_streamlit_style = """
+<style>
+#MainMenu {visibility: hidden;}
+header {visibility: hidden;}
+footer {visibility: hidden;}
+.stDeployButton {display:none;}
+</style>
+"""
+st.markdown(hide_streamlit_style, unsafe_allow_html=True)
+
 # =========================================================
-# [긴급 조치] 채팅 로그 공유 메모리
+# [기능] 채팅 로그 공유 메모리
 # =========================================================
 @st.cache_resource
 def get_shared_logs():
@@ -23,27 +34,20 @@ def get_shared_logs():
 chat_logs = get_shared_logs()
 
 # =========================================================
-# 1. 사이드바 (API 키 + ★초기화 버튼★)
+# 1. 사이드바 (API 키 설정만 남김)
 # =========================================================
 with st.sidebar:
-    st.header("⚙️ 설정")
+    # 초기화 버튼은 삭제했습니다!
     if "GEMINI_API_KEY" in st.secrets:
         api_key = st.secrets["GEMINI_API_KEY"]
     else:
         api_key = st.text_input("Gemini API Key", type="password")
-    
-    st.divider()
-    # 화면이 안 보일 때 누르는 비상 탈출 버튼
-    if st.button("🔄 초기화 (로그아웃)"):
-        st.session_state.clear() # 모든 기억 삭제
-        st.rerun() # 새로고침
 
 # =========================================================
 # 2. 로그인 화면 (입장 전)
 # =========================================================
 if "student_info" not in st.session_state:
     st.title("🔒 수업 입장하기")
-    st.info("왼쪽 사이드바에 API 키가 입력되었는지 확인해주세요.")
     
     with st.form("login_form"):
         col1, col2, col3 = st.columns(3)
@@ -177,7 +181,6 @@ if prompt := st.chat_input("질문을 입력하세요"):
                     message_placeholder.markdown(full_response + "▌")
             message_placeholder.markdown(full_response)
             
-            # ★ 여기가 문제였던 부분입니다! 따옴표를 확실히 닫았습니다. ★
             st.session_state.messages.append({"role": "assistant", "content": full_response})
             
         except Exception as e:
