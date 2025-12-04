@@ -5,15 +5,16 @@ import os
 import datetime
 
 # =========================================================
-# [설정] 모델 및 파일 이름
+# [설정] 기본 환경 설정
 # =========================================================
-MODEL_NAME = "models/gemini-2.0-flash"
-TARGET_FILES = ["lesson.pdf"] 
-TEACHER_PASSWORD = "takeit" # 선생님 비밀번호
+# 비용 절감 및 속도를 위해 1.5-flash 모델 사용 (가장 추천)
+MODEL_NAME = "models/gemini-1.5-flash" 
+TARGET_FILES = ["lesson.pdf"]  # PDF 파일 이름 (같은 폴더에 있어야 함)
+TEACHER_PASSWORD = "takeit"    # 선생님 접속 비밀번호
 
 st.set_page_config(page_title="Muna E. Teacher", page_icon="🏫")
 
-# [디자인] 지저분한 메뉴와 푸터 숨기기 (통합)
+# [디자인] 화면 깔끔하게 만들기 (메뉴, 푸터 숨김)
 hide_streamlit_style = """
 <style>
 #MainMenu {visibility: hidden;}
@@ -26,7 +27,7 @@ footer {visibility: hidden;}
 st.markdown(hide_streamlit_style, unsafe_allow_html=True)
 
 # =========================================================
-# [기능] 채팅 로그 공유 메모리
+# [기능] 채팅 로그 저장소 (공유 메모리)
 # =========================================================
 @st.cache_resource
 def get_shared_logs():
@@ -38,19 +39,18 @@ chat_logs = get_shared_logs()
 # 1. 사이드바 (API 키 설정)
 # =========================================================
 with st.sidebar:
+    # 서버(Secrets)에 키가 있으면 자동으로 가져오고, 없으면 입력창 표시
     if "GEMINI_API_KEY" in st.secrets:
         api_key = st.secrets["GEMINI_API_KEY"]
     else:
-        api_key = st.text_input("Gemini API Key", type="password")
+        api_key = st.text_input("Gemini API Key를 입력하세요", type="password")
 
 # =========================================================
-# 2. 로그인 화면 (입장 전)
+# 2. 로그인 화면 (가장 먼저 실행됨)
 # =========================================================
 if "student_info" not in st.session_state:
     st.title("🔒 수업 입장하기")
     
-    # (여기에 있던 중복된 CSS 코드를 삭제했습니다)
-
     with st.form("login_form"):
         col1, col2, col3 = st.columns(3)
         with col1:
@@ -62,17 +62,19 @@ if "student_info" not in st.session_state:
             
         name = st.text_input("이름", placeholder="이름 (선생님은 비밀번호 입력)")
         
-        if st.form_submit_button("입장하기"):
+        submit = st.form_submit_button("입장하기")
+        
+        if submit:
             name = name.strip()
             class_num = class_num.strip()
             number = number.strip()
 
-            # [교사 모드] 비밀번호 확인
+            # [교사 모드] 이름 칸에 비밀번호(takeit)를 입력했을 때
             if name == TEACHER_PASSWORD:
                 st.session_state["student_info"] = "TEACHER_MODE"
                 st.rerun()
             
-            # [학생 모드] 빈칸 확인
+            # [학생 모드] 빈칸 없이 잘 입력했는지 확인
             elif class_num and number and name:
                 full_info = f"{grade} {class_num}반 {number}번 {name}"
                 st.session_state["student_info"] = full_info
@@ -80,43 +82,44 @@ if "student_info" not in st.session_state:
             else:
                 st.error("빈칸을 모두 채워주세요!")
     
-    st.stop() # 로그인 안 하면 여기서 멈춤
+    st.stop() # 로그인이 안 됐으면 아래 코드는 실행 안 함
 
 # =========================================================
-# 3. 교사 전용 화면 (CCTV)
+# 3. 교사 전용 화면 (관리자 페이지)
 # =========================================================
 if st.session_state["student_info"] == "TEACHER_MODE":
     st.title("👨‍🏫 교사 전용 대시보드")
-    st.success(f"관리자 모드 접속 완료")
+    st.success("관리자 모드로 접속했습니다.")
     
     col_a, col_b = st.columns([4, 1])
     with col_a:
-        st.write("학생들의 질문 기록입니다. (최신순)")
+        st.write(f"📊 총 질문 횟수: {len(chat_logs)}건")
     with col_b:
         if st.button("새로고침"):
             st.rerun()
             
     st.divider()
+    st.write("🔽 **학생들의 실시간 질문 로그 (최신순)**")
 
     if len(chat_logs) > 0:
         for log in reversed(chat_logs):
             # log = [시간, 학생정보, 질문]
             st.markdown(f"**⏰ {log[0]} | 👤 {log[1]}**")
-            st.info(f"{log[2]}")
+            st.info(f"Q. {log[2]}")
     else:
-        st.write("아직 질문이 없습니다.")
+        st.write("아직 등록된 질문이 없습니다.")
         
-    st.stop() # 교사는 여기서 끝
+    st.stop() # 교사는 챗봇 화면을 볼 필요 없으므로 여기서 끝
 
 # =========================================================
-# 4. 학생 전용 화면 (챗봇)
+# 4. 학생 전용 화면 (영어 선생님 챗봇)
 # =========================================================
 student_info = st.session_state["student_info"]
 
 st.title("🏫 Muna E. Teacher")
-st.caption(f"로그인: {student_info}")
+st.caption(f"로그인 정보: {student_info}")
 
-# PDF 파일 읽기
+# (1) PDF 파일 읽기 (있으면 읽고, 없으면 패스)
 pdf_content = ""
 for file_name in TARGET_FILES:
     if os.path.exists(file_name):
@@ -128,50 +131,81 @@ for file_name in TARGET_FILES:
         except:
             pass 
 
-# 성격 설정
+# (2) [핵심] 챗봇 성격 설정 (구문 분석 전문)
 if pdf_content:
-    SYSTEM_PROMPT = f"""
-    [역할] 유쾌한 영어 선생님 'Muna E. Teacher'.
-    [자료] {pdf_content}
-    [지침] 자료 기반 설명. 친절하고 재미있게.
-    """
+    context_data = f"[수업 자료 참고]\n{pdf_content}"
 else:
-    SYSTEM_PROMPT = "자료가 없습니다."
+    context_data = "수업 자료 PDF가 없습니다. 일반적인 영어 지식으로 답변하세요."
 
-# Gemini 연결
+SYSTEM_PROMPT = f"""
+[역할]
+당신은 고등학교 1학년을 위한 꼼꼼한 '영어 구문 분석 전문가' Muna E. Teacher입니다.
+{context_data}
+
+[절대 규칙]
+학생이 영어 문장을 질문하면, **반드시 아래의 4단계 포맷을 엄격하게 지켜서** 답변하세요.
+설명은 친절하고 구체적이어야 합니다.
+
+[출력 포맷 예시] (이 형식을 그대로 따를 것)
+
+1. **[직독직해]**
+   - Studying English hard / is important / for your future.
+   - 영어를 열심히 공부하는 것은 / 중요하다 / 너의 미래를 위해.
+
+2. **[구문 분석]**
+   - [S] Studying English hard
+   - [V] is
+   - [C] important
+   - (M) for your future
+
+3. **[상세 설명]**
+   - 주어(S): Studying English hard (동명사구 주어)
+   - 동사(V): is (be동사, 현재시제)
+   - 보어(C): important (형용사)
+   - 전치사구: (for your future)는 '너의 미래를 위해'라는 뜻으로 형용사 important를 수식하거나 문장 전체를 보충합니다.
+
+4. **[핵심 문법]**
+   - 동명사 주어: Studying처럼 동사에 -ing를 붙여 주어로 쓰면 '~하는 것'으로 해석합니다. 동명사 주어는 무조건 **단수 취급**하므로 동사 자리에 are가 아닌 is가 왔습니다.
+"""
+
+# (3) Gemini 연결
 if not api_key:
-    st.error("API 키가 없습니다.")
+    st.warning("선생님이 아직 API 키를 입력하지 않으셨습니다.")
     st.stop()
 
 genai.configure(api_key=api_key)
 try:
     model = genai.GenerativeModel(MODEL_NAME)
 except:
-    st.error(f"모델 이름 오류: {MODEL_NAME}")
+    st.error(f"모델 설정 오류: {MODEL_NAME}을 찾을 수 없습니다.")
     st.stop()
 
-# 채팅 기록
+# (4) 채팅 기록 초기화
 if "messages" not in st.session_state:
-    st.session_state["messages"] = [{"role": "assistant", "content": "Hi! 영어 공부 도와줄게. 질문해봐! 😎"}]
+    st.session_state["messages"] = [{"role": "assistant", "content": "Hi there! 👋 해석이 안 되거나 분석하고 싶은 영어 문장을 입력해봐!"}]
 
+# (5) 이전 대화 화면에 그리기
 for msg in st.session_state.messages:
     st.chat_message(msg["role"]).write(msg["content"])
 
-# 입력 처리
-if prompt := st.chat_input("질문을 입력하세요"):
+# (6) 사용자 입력 처리
+if prompt := st.chat_input("영어 문장을 입력하세요..."):
+    # 학생 질문 화면 표시
     st.chat_message("user").write(prompt)
     st.session_state.messages.append({"role": "user", "content": prompt})
 
-    # [로그 저장]
+    # [로그 저장] 교사 화면으로 전송
     now = datetime.datetime.now().strftime("%H:%M:%S")
     chat_logs.append([now, student_info, prompt]) 
     
+    # AI에게 보낼 프롬프트 조립
     full_prompt = SYSTEM_PROMPT + "\n\n"
-    recent_messages = st.session_state.messages[-10:]
+    recent_messages = st.session_state.messages[-10:] # 최근 10개 대화만 기억
     for msg in recent_messages:
         role = "User" if msg["role"] == "user" else "Model"
         full_prompt += f"{role}: {msg['content']}\n"
     
+    # AI 답변 생성 (스트리밍)
     with st.chat_message("assistant"):
         message_placeholder = st.empty()
         full_response = ""
@@ -183,9 +217,8 @@ if prompt := st.chat_input("질문을 입력하세요"):
                     message_placeholder.markdown(full_response + "▌")
             message_placeholder.markdown(full_response)
             
-            # [수정됨] 마지막 줄 완성
+            # 대화 기록 저장
             st.session_state.messages.append({"role": "assistant", "content": full_response})
 
         except Exception as e:
-            st.error(f"에러 발생: {e}")
-
+            st.error(f"오류가 발생했습니다: {e}")
