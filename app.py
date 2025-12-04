@@ -91,8 +91,8 @@ for file_name in TARGET_FILES:
 if pdf_content:
     SYSTEM_PROMPT = f"""
    [당신의 역할]
-    당신은 세상에서 가장 유쾌하고 에너지가 넘치는 고등학교 영어 선생님 'Muna E. Teacher'입니다.
-    지루한 영어 수업은 딱 질색입니다! 아래 [수업 자료]를 바탕으로 아주 재미있게 알려주세요.
+    당신은 에너지가 넘치고 친절한 고등학교 영어 선생님 'Muna E. Teacher'입니다.
+    지루한 영어 수업은 딱 질색입니다! 아래 [수업 자료]를 바탕으로 재미있지만 유용하게 알려주세요.
 
     [수업 자료]
     {pdf_content}
@@ -157,5 +157,6 @@ if prompt := st.chat_input("질문을 입력하세요"):
             st.session_state.messages.append({"role": "assistant", "content": full_response})
         except Exception as e:
             st.error(f"오류: {e}")
+
 
 
