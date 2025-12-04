@@ -3,6 +3,7 @@ import google.generativeai as genai
 import PyPDF2
 import os
 import datetime
+import random # [추가] 랜덤 기능을 위해 필요합니다
 
 # =========================================================
 # [설정] 기본 환경 설정
@@ -42,6 +43,11 @@ with st.sidebar:
         api_key = st.secrets["GEMINI_API_KEY"]
     else:
         api_key = st.text_input("Gemini API Key를 입력하세요", type="password")
+    
+    # [추가] 사이드바 하단에도 고정적으로 경고 문구 표시
+    st.divider()
+    st.caption("⚠️ **주의사항**")
+    st.caption("AI는 실수를 할 수 있습니다. 중요한 내용은 반드시 교과서나 선생님께 확인하세요.")
 
 # =========================================================
 # 2. 로그인 화면
@@ -128,7 +134,7 @@ for file_name in TARGET_FILES:
         except:
             pass 
 
-# (2) 챗봇 성격 설정 (문법 분석 강화 버전!)
+# (2) 챗봇 성격 설정
 if pdf_content:
     context_data = f"[수업 자료 참고]\n{pdf_content}"
 else:
@@ -145,27 +151,13 @@ SYSTEM_PROMPT = f"""
 
 [분석 시 주의사항 ★★★]
 - **병렬 구조:** and/but으로 연결된 동사들이 서로 병렬인지 확인하세요.
-- **5형식 동사(help, make, let 등):** - `help` 뒤에 `to-v`나 `원형부정사`가 오면, 문맥에 따라 **[목적어(O)]**인지, 목적어가 생략된 **[목적격 보어(OC)]**인지 꼼꼼히 구별하세요.
-  - 예: "helped to reshape"는 문맥상 "helped (people) to reshape"로 보아 [OC]로 분석하거나, 준동사구의 성격을 명확히 설명하세요.
+- **5형식 동사(help, make, let 등):** help 뒤에 목적어가 생략된 [OC] 구조인지 꼼꼼히 구별하세요.
 
 [출력 포맷 예시]
-
-1. **[직독직해]**
-   - The great generative ideas / in human history / have transformed / the world view.
-   - 위대한 생성적 아이디어들은 / 인류 역사상 / 변화시켰다 / 세계관을.
-
-2. **[구문 분석]**
-   - [S] The great generative ideas
-   - [V] have transformed
-   - [O] the world view
-
-3. **[상세 설명]** (핵심만)
-   - **주어(S):** The great generative ideas (핵심 주어: ideas)
-   - **동사(V):** have transformed (현재완료)
-   - **목적어(O):** the world view
-
+1. **[직독직해]** (끊어 읽기 해석)
+2. **[구문 분석]** ([S], [V], [O], [OC] 표시)
+3. **[상세 설명]** (핵심만 간략히)
 4. **[핵심 문법]** (한 줄 요약)
-   - **현재완료:** 과거의 일이 현재까지 영향을 미침.
 """
 
 # (3) Gemini 연결 & 안전 필터 해제
@@ -173,7 +165,6 @@ if not api_key:
     st.warning("선생님이 아직 API 키를 입력하지 않으셨습니다.")
     st.stop()
 
-# 안전 필터 해제 (중단 방지)
 safety_settings = [
     {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
     {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
@@ -190,7 +181,6 @@ except:
 
 # (4) 채팅 기록 초기화
 if "messages" not in st.session_state:
-    # [인사말 수정] 이름 넣고, 범용적인 인사말로 변경
     welcome_msg = f"안녕! 👋 {student_name}야. 영어 공부하다 막히는 거 있으면 언제든 물어봐! 내가 도와줄게. 😎"
     st.session_state["messages"] = [{"role": "assistant", "content": welcome_msg}]
 
@@ -224,6 +214,12 @@ if prompt := st.chat_input("영어 문장을 입력하세요..."):
                 if response.text:
                     full_response += response.text
                     message_placeholder.markdown(full_response + "▌")
+            
+            # [추가된 기능] 가끔씩(30% 확률) 경고 문구 추가하기
+            if random.random() < 0.3:
+                disclaimer = "\n\n---\n💡 **[Check!]** AI는 실수를 할 수 있어요. 중요한 내용은 교과서와 꼭 비교해보세요! 👀"
+                full_response += disclaimer
+            
             message_placeholder.markdown(full_response)
             
             st.session_state.messages.append({"role": "assistant", "content": full_response})
