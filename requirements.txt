@@ -1,2 +1,6 @@
 streamlit
+
 google-generativeai
+streamlit
+google-generativeai
+PyPDF2
