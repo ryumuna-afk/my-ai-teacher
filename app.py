@@ -120,7 +120,7 @@ if st.session_state["student_info"] == "TEACHER_MODE":
 student_info = st.session_state["student_info"]
 student_name = st.session_state.get("student_name", "친구")
 
-st.title("🏫 Muna E. Teacher")
+st.title("🏫 Muna Teacher")
 st.caption(f"로그인 정보: {student_info}")
 
 # (1) PDF 파일 읽기
