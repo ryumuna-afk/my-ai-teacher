@@ -37,7 +37,7 @@ footer {visibility: hidden;}
 st.markdown(hide_streamlit_style, unsafe_allow_html=True)
 
 # =========================================================
-# [핵심 기능] 파일 기반 데이터베이스 (DB) - 여기가 중요!
+# [핵심 기능] 파일 기반 데이터베이스 (DB)
 # =========================================================
 DB_FILE = "school_db.json"
 
@@ -54,33 +54,25 @@ def save_db(data):
     with open(DB_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=4)
 
-# ★ 중요: 앱이 실행될 때마다 파일에서 장부를 불러옵니다.
 db = load_db()
 
 # =========================================================
-# [함수] 영어만 남기는 강력한 필터 (TTS용) - 업그레이드됨!
+# [함수] 영어만 남기는 강력한 필터 (TTS용)
 # =========================================================
 def clean_english_for_tts(text):
-    # 1. 선생님 이름(Muna Teacher) 삭제 (대소문자 무시)
+    # 1. 선생님 이름 삭제
     text = re.sub(r'(?i)Muna\s*Teacher', '', text)
-    
-    # 2. 분석 태그([S], [V] 등) 및 괄호 안의 내용 삭제
+    # 2. 분석 태그 삭제
     text = re.sub(r'\[.*?\]', '', text)
     text = re.sub(r'\(.*?\)', '', text)
-    
-    # 3. 한글 완전 삭제
+    # 3. 한글 삭제
     text = re.sub(r'[가-힣]+', '', text)
-    
-    # 4. 숫자 삭제 (1. 2. 같은 번호 안 읽게)
+    # 4. 숫자 삭제
     text = re.sub(r'[0-9]', '', text)
-    
     # 5. 특수문자 삭제 (문장부호 . , ! ? ' " 만 남김)
-    # 슬래시(/), 대시(-), 별표(*), 밑줄(_) 등 다 지움
     text = re.sub(r'[^a-zA-Z.,!?\'\"\s]', ' ', text)
-    
     # 6. 공백 정리
     text = re.sub(r'\s+', ' ', text).strip()
-    
     return text
 
 # =========================================================
@@ -96,13 +88,11 @@ with st.sidebar:
         
     st.divider()
 
-    # [수정됨] 질문 횟수 표시 (이제 db를 직접 봅니다!)
     if "student_info" in st.session_state and st.session_state["student_info"] != "TEACHER_MODE":
         student_info = st.session_state["student_info"]
         today_str = datetime.datetime.now().strftime("%Y-%m-%d")
         usage_key = f"{today_str}_{student_info}"
         
-        # 파일(db)에서 직접 읽어오므로 정확합니다!
         current_count = db["usage"].get(usage_key, 0)
         remaining = DAILY_LIMIT - current_count
         
@@ -221,7 +211,7 @@ for file_name in TARGET_FILES:
         except:
             pass 
 
-# (2) 챗봇 성격 설정
+# (2) 챗봇 성격 설정 (여기를 수정해서 설명을 길게 만들었습니다!)
 if pdf_content:
     context_data = f"[수업 자료 참고]\n{pdf_content}"
 else:
@@ -235,7 +225,7 @@ SYSTEM_PROMPT = f"""
 [행동 지침]
 1. 정답만 알려달라고 하면 정중히 거절하고 힌트를 주세요.
 2. 학생이 영어 문장을 질문하면, **반드시 아래 4단계 포맷**을 지키세요.
-3. 설명은 **핵심만 간결하게(단답형)** 작성하세요.
+3. 설명은 **학생이 이해하기 쉽게, 친절하고 자세하게(서술형)** 작성하세요. (단답형 지양)
 
 [분석 시 주의사항]
 - **병렬 구조:** and/but 연결 확인.
@@ -243,9 +233,22 @@ SYSTEM_PROMPT = f"""
 
 [출력 포맷 예시]
 1. **[직독직해]** (끊어 읽기)
-2. **[구문 분석]** ([S], [V], [O], [OC])
-3. **[상세 설명]** (핵심만)
+   - Studying English hard / is important / for your future.
+   - 영어를 열심히 공부하는 것은 / 중요하다 / 너의 미래를 위해.
+
+2. **[구문 분석]**
+   - [S] Studying English hard
+   - [V] is
+   - [C] important
+   - (M) for your future
+
+3. **[상세 설명]** (친절하고 자세하게)
+   - **주어(S):** 'Studying English hard'입니다. 여기서 Studying은 동명사로 쓰여서 '~하는 것'이라고 해석합니다. 동명사 주어는 하나의 덩어리로 봐서 단수 취급을 합니다.
+   - **동사(V):** 'is'입니다. 주어가 단수이기 때문에 are가 아니라 is가 왔습니다.
+   - **보어(C):** 'important'입니다. 주어의 상태(중요하다)를 설명해주는 형용사입니다.
+
 4. **[핵심 문법]** (한 줄 요약)
+   - **동명사 주어:** 동사에 -ing를 붙여 명사처럼 쓰며, 항상 **단수 취급**합니다.
 """
 
 # (3) Gemini 연결
@@ -295,13 +298,9 @@ if st.session_state.get("quiz_requested"):
 # (7) 사용자 입력 처리
 if prompt := st.chat_input("영어 문장을 입력하세요..."):
     
-    # -----------------------------------------------------
-    # [수정됨] 파일 DB 사용 (완벽한 카운팅)
-    # -----------------------------------------------------
     today_str = datetime.datetime.now().strftime("%Y-%m-%d")
     usage_key = f"{today_str}_{student_info}"
     
-    # DB에서 최신 횟수 가져오기
     current_count = db["usage"].get(usage_key, 0)
     
     if current_count >= DAILY_LIMIT:
@@ -316,7 +315,7 @@ if prompt := st.chat_input("영어 문장을 입력하세요..."):
         
         # 2. 카운트 증가 및 파일 저장
         db["usage"][usage_key] = current_count + 1
-        save_db(db) # 파일에 저장! (새로고침해도 유지됨)
+        save_db(db)
         
         full_prompt = SYSTEM_PROMPT + "\n\n"
         recent_messages = st.session_state.messages[-10:]
@@ -340,10 +339,9 @@ if prompt := st.chat_input("영어 문장을 입력하세요..."):
                 message_placeholder.markdown(full_response)
                 st.session_state.messages.append({"role": "assistant", "content": full_response})
 
-                # [최종 수정된 TTS] 숫자, Muna Teacher 등 모두 제거
+                # [최종 TTS] 영어만 깔끔하게 (설명 제외)
                 try:
                     clean_english = clean_english_for_tts(full_response)
-                    # 영어 단어가 최소 3개 이상일 때만 재생
                     if len(clean_english.split()) >= 3:
                         tts = gTTS(text=clean_english, lang='en')
                         audio_fp = io.BytesIO()
