@@ -265,4 +265,95 @@ try:
     model = genai.GenerativeModel(MODEL_NAME, safety_settings=safety_settings)
 except:
     st.error(f"모델 설정 오류: {MODEL_NAME}을 찾을 수 없습니다.")
-    st.
+    st.stop()
+
+# (4) 채팅 기록 초기화
+if "messages" not in st.session_state:
+    welcome_msg = f"안녕! 👋 {student_name}야. 영어 공부하다 막히는 거 있으면 언제든 물어봐!\n(하루에 {DAILY_LIMIT}개까지만 질문할 수 있어! 아껴 써야 해 😉)"
+    st.session_state["messages"] = [{"role": "assistant", "content": welcome_msg}]
+
+# (5) 대화 화면 출력
+for msg in st.session_state.messages:
+    st.chat_message(msg["role"]).write(msg["content"])
+
+# (6) 퀴즈 생성 처리
+if st.session_state.get("quiz_requested"):
+    st.session_state["quiz_requested"] = False
+    with st.chat_message("assistant"):
+        with st.spinner("퀴즈를 만들고 있어요... 🤔"):
+            quiz_prompt = "지금까지의 대화 내용을 바탕으로 학생이 이해했는지 확인하는 **객관식 퀴즈 1문제**를 만들어줘. 정답과 해설은 맨 아래에 숨겨서(스포일러 방지) 출력해."
+            full_context = ""
+            for msg in st.session_state.messages[-10:]:
+                full_context += f"{msg['role']}: {msg['content']}\n"
+            try:
+                response = model.generate_content(quiz_prompt + "\n\n" + full_context)
+                st.markdown(response.text)
+                st.session_state.messages.append({"role": "assistant", "content": response.text})
+            except:
+                st.error("퀴즈 생성 실패")
+
+# (7) 사용자 입력 처리
+if prompt := st.chat_input("영어 문장을 입력하세요..."):
+    
+    # -----------------------------------------------------
+    # [수정됨] 파일 DB 사용 (완벽한 카운팅)
+    # -----------------------------------------------------
+    today_str = datetime.datetime.now().strftime("%Y-%m-%d")
+    usage_key = f"{today_str}_{student_info}"
+    
+    # DB에서 최신 횟수 가져오기
+    current_count = db["usage"].get(usage_key, 0)
+    
+    if current_count >= DAILY_LIMIT:
+        st.error(f"⛔ **오늘의 질문 횟수({DAILY_LIMIT}회)를 모두 다 썼어!** 내일 다시 만나자 👋")
+    else:
+        st.chat_message("user").write(prompt)
+        st.session_state.messages.append({"role": "user", "content": prompt})
+
+        # 1. 로그 저장
+        now = datetime.datetime.now().strftime("%H:%M:%S")
+        db["logs"].append([now, student_info, prompt]) 
+        
+        # 2. 카운트 증가 및 파일 저장
+        db["usage"][usage_key] = current_count + 1
+        save_db(db) # 파일에 저장! (새로고침해도 유지됨)
+        
+        full_prompt = SYSTEM_PROMPT + "\n\n"
+        recent_messages = st.session_state.messages[-10:]
+        for msg in recent_messages:
+            role = "User" if msg["role"] == "user" else "Model"
+            full_prompt += f"{role}: {msg['content']}\n"
+        
+        with st.chat_message("assistant"):
+            message_placeholder = st.empty()
+            full_response = ""
+            try:
+                responses = model.generate_content(full_prompt, stream=True)
+                for response in responses:
+                    if response.text:
+                        full_response += response.text
+                        message_placeholder.markdown(full_response + "▌")
+                
+                if random.random() < 0.2:
+                    full_response += "\n\n---\n💡 **[Self-Check]** 스스로 고민해보고, 교과서와 비교해보세요! 👀"
+                
+                message_placeholder.markdown(full_response)
+                st.session_state.messages.append({"role": "assistant", "content": full_response})
+
+                # [최종 수정된 TTS] 숫자, Muna Teacher 등 모두 제거
+                try:
+                    clean_english = clean_english_for_tts(full_response)
+                    # 영어 단어가 최소 3개 이상일 때만 재생
+                    if len(clean_english.split()) >= 3:
+                        tts = gTTS(text=clean_english, lang='en')
+                        audio_fp = io.BytesIO()
+                        tts.write_to_fp(audio_fp)
+                        st.audio(audio_fp, format='audio/mp3')
+                except:
+                    pass 
+
+            except Exception as e:
+                if "finish_reason" in str(e):
+                     st.error("AI가 답변을 주저하고 있어요. (안전 필터)")
+                else:
+                     st.error(f"오류가 발생했습니다: {e}")
