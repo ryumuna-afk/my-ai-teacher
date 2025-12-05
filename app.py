@@ -7,7 +7,7 @@ import random
 from gtts import gTTS 
 import io 
 import re 
-import json # [추가] 파일을 다루기 위한 도구
+import json
 
 # =========================================================
 # [설정] 기본 환경 설정
@@ -37,12 +37,11 @@ footer {visibility: hidden;}
 st.markdown(hide_streamlit_style, unsafe_allow_html=True)
 
 # =========================================================
-# [핵심 기능] 파일 기반 데이터베이스 (DB)
+# [핵심 기능] 파일 기반 데이터베이스 (DB) - 여기가 중요!
 # =========================================================
-DB_FILE = "school_db.json" # 이 파일에 기록을 저장합니다
+DB_FILE = "school_db.json"
 
 def load_db():
-    """파일에서 데이터를 읽어옵니다."""
     if not os.path.exists(DB_FILE):
         return {"logs": [], "notice": "", "usage": {}}
     try:
@@ -52,21 +51,36 @@ def load_db():
         return {"logs": [], "notice": "", "usage": {}}
 
 def save_db(data):
-    """파일에 데이터를 저장합니다."""
     with open(DB_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=4)
 
-# 앱이 실행될 때마다 최신 데이터를 불러옵니다
+# ★ 중요: 앱이 실행될 때마다 파일에서 장부를 불러옵니다.
 db = load_db()
 
 # =========================================================
-# [함수] 깔끔한 영어 추출기 (TTS용)
+# [함수] 영어만 남기는 강력한 필터 (TTS용) - 업그레이드됨!
 # =========================================================
 def clean_english_for_tts(text):
+    # 1. 선생님 이름(Muna Teacher) 삭제 (대소문자 무시)
+    text = re.sub(r'(?i)Muna\s*Teacher', '', text)
+    
+    # 2. 분석 태그([S], [V] 등) 및 괄호 안의 내용 삭제
     text = re.sub(r'\[.*?\]', '', text)
+    text = re.sub(r'\(.*?\)', '', text)
+    
+    # 3. 한글 완전 삭제
     text = re.sub(r'[가-힣]+', '', text)
-    text = re.sub(r'[^a-zA-Z0-9.,!?\'\"\s]', ' ', text)
+    
+    # 4. 숫자 삭제 (1. 2. 같은 번호 안 읽게)
+    text = re.sub(r'[0-9]', '', text)
+    
+    # 5. 특수문자 삭제 (문장부호 . , ! ? ' " 만 남김)
+    # 슬래시(/), 대시(-), 별표(*), 밑줄(_) 등 다 지움
+    text = re.sub(r'[^a-zA-Z.,!?\'\"\s]', ' ', text)
+    
+    # 6. 공백 정리
     text = re.sub(r'\s+', ' ', text).strip()
+    
     return text
 
 # =========================================================
@@ -82,13 +96,13 @@ with st.sidebar:
         
     st.divider()
 
-    # 질문 횟수 표시
+    # [수정됨] 질문 횟수 표시 (이제 db를 직접 봅니다!)
     if "student_info" in st.session_state and st.session_state["student_info"] != "TEACHER_MODE":
         student_info = st.session_state["student_info"]
         today_str = datetime.datetime.now().strftime("%Y-%m-%d")
         usage_key = f"{today_str}_{student_info}"
         
-        # 파일(db)에서 횟수 확인
+        # 파일(db)에서 직접 읽어오므로 정확합니다!
         current_count = db["usage"].get(usage_key, 0)
         remaining = DAILY_LIMIT - current_count
         
@@ -155,13 +169,12 @@ if st.session_state["student_info"] == "TEACHER_MODE":
     st.title("👨‍🏫 Muna Teacher 대시보드")
     
     st.subheader("📢 학생들에게 메세지 보내기")
-    # 파일(db)에서 공지 불러오기
     current_notice = db.get("notice", "")
     new_notice = st.text_input("공지 내용을 입력하고 엔터를 치세요", value=current_notice)
     
     if new_notice != current_notice:
         db["notice"] = new_notice
-        save_db(db) # 변경사항 저장
+        save_db(db)
         st.success("공지가 업데이트되었습니다!")
         st.rerun()
     
@@ -193,7 +206,7 @@ student_name = st.session_state.get("student_name", "친구")
 st.title("🏫 Muna Teacher")
 st.caption(f"로그인 정보: {student_info}")
 
-if db["notice"]:
+if db.get("notice"):
     st.warning(f"📢 **선생님 말씀:** {db['notice']}")
 
 # (1) PDF 파일 읽기
@@ -252,92 +265,4 @@ try:
     model = genai.GenerativeModel(MODEL_NAME, safety_settings=safety_settings)
 except:
     st.error(f"모델 설정 오류: {MODEL_NAME}을 찾을 수 없습니다.")
-    st.stop()
-
-# (4) 채팅 기록 초기화
-if "messages" not in st.session_state:
-    welcome_msg = f"안녕! 👋 {student_name}야. 영어 공부하다 막히는 거 있으면 언제든 물어봐!\n(하루에 {DAILY_LIMIT}개까지만 질문할 수 있어! 아껴 써야 해 😉)"
-    st.session_state["messages"] = [{"role": "assistant", "content": welcome_msg}]
-
-# (5) 대화 화면 출력
-for msg in st.session_state.messages:
-    st.chat_message(msg["role"]).write(msg["content"])
-
-# (6) 퀴즈 생성 처리
-if st.session_state.get("quiz_requested"):
-    st.session_state["quiz_requested"] = False
-    with st.chat_message("assistant"):
-        with st.spinner("퀴즈를 만들고 있어요... 🤔"):
-            quiz_prompt = "지금까지의 대화 내용을 바탕으로 학생이 이해했는지 확인하는 **객관식 퀴즈 1문제**를 만들어줘. 정답과 해설은 맨 아래에 숨겨서(스포일러 방지) 출력해."
-            full_context = ""
-            for msg in st.session_state.messages[-10:]:
-                full_context += f"{msg['role']}: {msg['content']}\n"
-            try:
-                response = model.generate_content(quiz_prompt + "\n\n" + full_context)
-                st.markdown(response.text)
-                st.session_state.messages.append({"role": "assistant", "content": response.text})
-            except:
-                st.error("퀴즈 생성 실패")
-
-# (7) 사용자 입력 처리
-if prompt := st.chat_input("영어 문장을 입력하세요..."):
-    
-    # -----------------------------------------------------
-    # [수정됨] 파일 DB에서 질문 횟수 체크
-    # -----------------------------------------------------
-    today_str = datetime.datetime.now().strftime("%Y-%m-%d")
-    usage_key = f"{today_str}_{student_info}"
-    current_count = db["usage"].get(usage_key, 0)
-    
-    if current_count >= DAILY_LIMIT:
-        st.error(f"⛔ **오늘의 질문 횟수({DAILY_LIMIT}회)를 모두 다 썼어!** 내일 다시 만나자 👋")
-    else:
-        st.chat_message("user").write(prompt)
-        st.session_state.messages.append({"role": "user", "content": prompt})
-
-        # 1. 로그 저장
-        now = datetime.datetime.now().strftime("%H:%M:%S")
-        db["logs"].append([now, student_info, prompt]) 
-        
-        # 2. 카운트 증가 및 파일 저장 (즉시 저장!)
-        db["usage"][usage_key] = current_count + 1
-        save_db(db) # 파일에 꽝! 박아넣기
-        
-        full_prompt = SYSTEM_PROMPT + "\n\n"
-        recent_messages = st.session_state.messages[-10:]
-        for msg in recent_messages:
-            role = "User" if msg["role"] == "user" else "Model"
-            full_prompt += f"{role}: {msg['content']}\n"
-        
-        with st.chat_message("assistant"):
-            message_placeholder = st.empty()
-            full_response = ""
-            try:
-                responses = model.generate_content(full_prompt, stream=True)
-                for response in responses:
-                    if response.text:
-                        full_response += response.text
-                        message_placeholder.markdown(full_response + "▌")
-                
-                if random.random() < 0.2:
-                    full_response += "\n\n---\n💡 **[Self-Check]** 스스로 고민해보고, 교과서와 비교해보세요! 👀"
-                
-                message_placeholder.markdown(full_response)
-                st.session_state.messages.append({"role": "assistant", "content": full_response})
-
-                # 영어 발음만 골라서 읽어주기
-                try:
-                    clean_english = clean_english_for_tts(full_response)
-                    if len(clean_english.split()) >= 3:
-                        tts = gTTS(text=clean_english, lang='en')
-                        audio_fp = io.BytesIO()
-                        tts.write_to_fp(audio_fp)
-                        st.audio(audio_fp, format='audio/mp3')
-                except:
-                    pass 
-
-            except Exception as e:
-                if "finish_reason" in str(e):
-                     st.error("AI가 답변을 주저하고 있어요. (안전 필터)")
-                else:
-                     st.error(f"오류가 발생했습니다: {e}")
+    st.
