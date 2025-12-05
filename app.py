@@ -7,6 +7,7 @@ import random
 from gtts import gTTS 
 import io 
 import re 
+import json # [추가] 파일을 다루기 위한 도구
 
 # =========================================================
 # [설정] 기본 환경 설정
@@ -36,31 +37,36 @@ footer {visibility: hidden;}
 st.markdown(hide_streamlit_style, unsafe_allow_html=True)
 
 # =========================================================
-# [기능] 공유 데이터
+# [핵심 기능] 파일 기반 데이터베이스 (DB)
 # =========================================================
-@st.cache_resource
-def get_shared_state():
-    return {"logs": [], "notice": "", "usage": {}} 
+DB_FILE = "school_db.json" # 이 파일에 기록을 저장합니다
 
-shared_state = get_shared_state()
+def load_db():
+    """파일에서 데이터를 읽어옵니다."""
+    if not os.path.exists(DB_FILE):
+        return {"logs": [], "notice": "", "usage": {}}
+    try:
+        with open(DB_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except:
+        return {"logs": [], "notice": "", "usage": {}}
+
+def save_db(data):
+    """파일에 데이터를 저장합니다."""
+    with open(DB_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=4)
+
+# 앱이 실행될 때마다 최신 데이터를 불러옵니다
+db = load_db()
 
 # =========================================================
-# [핵심] 🧼 영어만 남기는 강력한 세탁기 (TTS용)
+# [함수] 깔끔한 영어 추출기 (TTS용)
 # =========================================================
 def clean_english_for_tts(text):
-    # 1. [S], [V] 같은 분석 태그 내용 통째로 삭제
     text = re.sub(r'\[.*?\]', '', text)
-    
-    # 2. 한글 완전 삭제
     text = re.sub(r'[가-힣]+', '', text)
-    
-    # 3. ★ 핵심: 영어(a-z), 숫자, 기본 문장부호(.,!?) 빼고 다 지움!
-    # 이모지(👍), 슬래시(/), 대시(-), 별표(*), 괄호 등 싹 사라집니다.
     text = re.sub(r'[^a-zA-Z0-9.,!?\'\"\s]', ' ', text)
-    
-    # 4. 공백 정리 (지워진 자리를 깔끔하게 붙임)
     text = re.sub(r'\s+', ' ', text).strip()
-    
     return text
 
 # =========================================================
@@ -82,7 +88,8 @@ with st.sidebar:
         today_str = datetime.datetime.now().strftime("%Y-%m-%d")
         usage_key = f"{today_str}_{student_info}"
         
-        current_count = shared_state["usage"].get(usage_key, 0)
+        # 파일(db)에서 횟수 확인
+        current_count = db["usage"].get(usage_key, 0)
         remaining = DAILY_LIMIT - current_count
         
         if remaining > 0:
@@ -148,25 +155,28 @@ if st.session_state["student_info"] == "TEACHER_MODE":
     st.title("👨‍🏫 Muna Teacher 대시보드")
     
     st.subheader("📢 학생들에게 메세지 보내기")
-    new_notice = st.text_input("공지 내용을 입력하고 엔터를 치세요 (비우면 공지 삭제)")
-    if new_notice:
-        shared_state["notice"] = new_notice
-        st.success(f"공지 등록됨: {new_notice}")
-    elif new_notice == "":
-        shared_state["notice"] = "" 
+    # 파일(db)에서 공지 불러오기
+    current_notice = db.get("notice", "")
+    new_notice = st.text_input("공지 내용을 입력하고 엔터를 치세요", value=current_notice)
+    
+    if new_notice != current_notice:
+        db["notice"] = new_notice
+        save_db(db) # 변경사항 저장
+        st.success("공지가 업데이트되었습니다!")
+        st.rerun()
     
     st.divider()
     
     col_a, col_b = st.columns([4, 1])
     with col_a:
-        st.write(f"📊 총 질문 횟수: {len(shared_state['logs'])}건")
+        st.write(f"📊 총 질문 횟수: {len(db['logs'])}건")
     with col_b:
         if st.button("새로고침"):
             st.rerun()
             
     st.write("🔽 **실시간 질문 로그**")
-    if len(shared_state['logs']) > 0:
-        for log in reversed(shared_state['logs']):
+    if len(db['logs']) > 0:
+        for log in reversed(db['logs']):
             st.markdown(f"**⏰ {log[0]} | 👤 {log[1]}**")
             st.info(f"Q. {log[2]}")
     else:
@@ -183,8 +193,8 @@ student_name = st.session_state.get("student_name", "친구")
 st.title("🏫 Muna Teacher")
 st.caption(f"로그인 정보: {student_info}")
 
-if shared_state["notice"]:
-    st.warning(f"📢 **선생님 말씀:** {shared_state['notice']}")
+if db["notice"]:
+    st.warning(f"📢 **선생님 말씀:** {db['notice']}")
 
 # (1) PDF 파일 읽기
 pdf_content = ""
@@ -272,9 +282,12 @@ if st.session_state.get("quiz_requested"):
 # (7) 사용자 입력 처리
 if prompt := st.chat_input("영어 문장을 입력하세요..."):
     
+    # -----------------------------------------------------
+    # [수정됨] 파일 DB에서 질문 횟수 체크
+    # -----------------------------------------------------
     today_str = datetime.datetime.now().strftime("%Y-%m-%d")
     usage_key = f"{today_str}_{student_info}"
-    current_count = shared_state["usage"].get(usage_key, 0)
+    current_count = db["usage"].get(usage_key, 0)
     
     if current_count >= DAILY_LIMIT:
         st.error(f"⛔ **오늘의 질문 횟수({DAILY_LIMIT}회)를 모두 다 썼어!** 내일 다시 만나자 👋")
@@ -282,9 +295,13 @@ if prompt := st.chat_input("영어 문장을 입력하세요..."):
         st.chat_message("user").write(prompt)
         st.session_state.messages.append({"role": "user", "content": prompt})
 
+        # 1. 로그 저장
         now = datetime.datetime.now().strftime("%H:%M:%S")
-        shared_state["logs"].append([now, student_info, prompt]) 
-        shared_state["usage"][usage_key] = current_count + 1
+        db["logs"].append([now, student_info, prompt]) 
+        
+        # 2. 카운트 증가 및 파일 저장 (즉시 저장!)
+        db["usage"][usage_key] = current_count + 1
+        save_db(db) # 파일에 꽝! 박아넣기
         
         full_prompt = SYSTEM_PROMPT + "\n\n"
         recent_messages = st.session_state.messages[-10:]
@@ -308,10 +325,9 @@ if prompt := st.chat_input("영어 문장을 입력하세요..."):
                 message_placeholder.markdown(full_response)
                 st.session_state.messages.append({"role": "assistant", "content": full_response})
 
-                # [수정된 TTS] 영어만 깔끔하게 읽기 (강력 필터 적용)
+                # 영어 발음만 골라서 읽어주기
                 try:
                     clean_english = clean_english_for_tts(full_response)
-                    # 영어 단어가 최소 3개 이상일 때만 오디오 생성
                     if len(clean_english.split()) >= 3:
                         tts = gTTS(text=clean_english, lang='en')
                         audio_fp = io.BytesIO()
