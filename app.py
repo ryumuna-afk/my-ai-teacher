@@ -6,7 +6,7 @@ import datetime
 import random
 from gtts import gTTS 
 import io 
-import re # [추가] 영어만 골라내기 위한 정규표현식 도구
+import re 
 
 # =========================================================
 # [설정] 기본 환경 설정
@@ -15,7 +15,6 @@ MODEL_NAME = "models/gemini-pro-latest"
 TARGET_FILES = ["lesson.pdf"]  
 TEACHER_PASSWORD = "takeit"  
 
-# [수정 1] 이름 변경 (Muna Teacher)
 st.set_page_config(page_title="Muna Teacher", page_icon="🏫")
 
 # [디자인] 화면 깔끔하게 만들기
@@ -31,13 +30,29 @@ footer {visibility: hidden;}
 st.markdown(hide_streamlit_style, unsafe_allow_html=True)
 
 # =========================================================
-# [기능] 채팅 로그 저장소
+# [기능] 공유 데이터 (채팅 로그 + 공지사항)
 # =========================================================
+# 이 부분은 선생님과 모든 학생이 공유하는 '칠판' 같은 공간입니다.
 @st.cache_resource
-def get_shared_logs():
-    return []
+def get_shared_state():
+    return {"logs": [], "notice": ""} # 로그와 공지사항을 저장
 
-chat_logs = get_shared_logs()
+shared_state = get_shared_state()
+
+# =========================================================
+# [함수] 깔끔한 영어 추출기 (TTS용)
+# =========================================================
+def clean_english_for_tts(text):
+    # 1. 한글 제거
+    text = re.sub(r'[가-힣]+', '', text)
+    # 2. 분석 기호 제거 ([S], [V], [O] 등 대괄호 안의 내용 삭제)
+    text = re.sub(r'\[.*?\]', '', text)
+    # 3. 특수문자 제거 (슬래시, 대시, 별표, 괄호 등)
+    # 문장 부호(.,!?)는 읽어야 하므로 남김
+    text = re.sub(r'[\/\-\*\#\(\)]', ' ', text)
+    # 4. 불필요한 공백 정리 (연속된 공백을 하나로)
+    text = re.sub(r'\s+', ' ', text).strip()
+    return text
 
 # =========================================================
 # 1. 사이드바 (설정 및 퀴즈 기능)
@@ -61,8 +76,8 @@ with st.sidebar:
 
     st.divider()
     st.info("📢 **학습 규칙**")
-    st.caption("1. 정답만 물어보면 안 알려줌! 🙅‍♂️")
-    st.caption("2. 한 번에 한 문제씩만 질문하기")
+    st.caption("1. 정답만 묻기 없기! 🙅‍♂️")
+    st.caption("2. 한 번에 한 문제씩!")
 
 # =========================================================
 # 2. 로그인 화면
@@ -101,28 +116,37 @@ if "student_info" not in st.session_state:
     st.stop()
 
 # =========================================================
-# 3. 교사 전용 화면
+# 3. 교사 전용 화면 (대시보드 + 공지 발송)
 # =========================================================
 if st.session_state["student_info"] == "TEACHER_MODE":
-    st.title("👨‍🏫 교사 전용 대시보드")
-    st.success("관리자 모드로 접속했습니다.")
+    st.title("👨‍🏫 Muna Teacher 대시보드")
     
+    # [새 기능] 공지사항 보내기
+    st.subheader("📢 학생들에게 메세지 보내기")
+    new_notice = st.text_input("공지 내용을 입력하고 엔터를 치세요 (비우면 공지 삭제)")
+    if new_notice:
+        shared_state["notice"] = new_notice
+        st.success(f"공지 등록됨: {new_notice}")
+    elif new_notice == "":
+        shared_state["notice"] = "" # 지우기 기능
+    
+    st.divider()
+    
+    # 로그 확인
     col_a, col_b = st.columns([4, 1])
     with col_a:
-        st.write(f"📊 총 질문 횟수: {len(chat_logs)}건")
+        st.write(f"📊 총 질문 횟수: {len(shared_state['logs'])}건")
     with col_b:
         if st.button("새로고침"):
             st.rerun()
             
-    st.divider()
-    st.write("🔽 **학생들의 실시간 질문 로그 (최신순)**")
-
-    if len(chat_logs) > 0:
-        for log in reversed(chat_logs):
+    st.write("🔽 **실시간 질문 로그**")
+    if len(shared_state['logs']) > 0:
+        for log in reversed(shared_state['logs']):
             st.markdown(f"**⏰ {log[0]} | 👤 {log[1]}**")
             st.info(f"Q. {log[2]}")
     else:
-        st.write("아직 등록된 질문이 없습니다.")
+        st.write("아직 질문이 없습니다.")
         
     st.stop()
 
@@ -132,9 +156,12 @@ if st.session_state["student_info"] == "TEACHER_MODE":
 student_info = st.session_state["student_info"]
 student_name = st.session_state.get("student_name", "친구")
 
-# [수정 2] 타이틀 변경
 st.title("🏫 Muna Teacher")
 st.caption(f"로그인 정보: {student_info}")
+
+# [공지사항 표시] 선생님이 메세지를 보냈으면 맨 위에 뜸!
+if shared_state["notice"]:
+    st.warning(f"📢 **선생님 말씀:** {shared_state['notice']}")
 
 # (1) PDF 파일 읽기
 pdf_content = ""
@@ -224,8 +251,9 @@ if prompt := st.chat_input("영어 문장을 입력하세요..."):
     st.chat_message("user").write(prompt)
     st.session_state.messages.append({"role": "user", "content": prompt})
 
+    # 로그 저장 (공유 메모리에 저장)
     now = datetime.datetime.now().strftime("%H:%M:%S")
-    chat_logs.append([now, student_info, prompt]) 
+    shared_state["logs"].append([now, student_info, prompt]) 
     
     full_prompt = SYSTEM_PROMPT + "\n\n"
     recent_messages = st.session_state.messages[-10:]
@@ -250,15 +278,15 @@ if prompt := st.chat_input("영어 문장을 입력하세요..."):
             message_placeholder.markdown(full_response)
             st.session_state.messages.append({"role": "assistant", "content": full_response})
 
-            # [수정 3] 영어 발음만 골라서 읽어주기 (Listening Practice)
+            # [수정된 기능] 깔끔한 영어 듣기 (Clean TTS)
             try:
-                # 정규표현식으로 한글(가-힣)을 제거하고 영어/숫자/기호만 남김
-                english_only = re.sub(r'[가-힣]+', '', full_response)
-                # 불필요한 공백과 특수문자 정리
-                english_only = re.sub(r'[\*\#\-]', '', english_only).strip()
+                # 1. 정제 함수 통과 (한글, 기호 삭제)
+                clean_english = clean_english_for_tts(full_response)
                 
-                if len(english_only) > 5: # 읽을 영어가 있을 때만 실행
-                    tts = gTTS(text=english_only, lang='en')
+                # 2. 유효한 영어 단어가 2개 이상일 때만 오디오 생성
+                # (짧은 감탄사나 기호만 남은 경우 방지)
+                if len(clean_english.split()) >= 2:
+                    tts = gTTS(text=clean_english, lang='en')
                     audio_fp = io.BytesIO()
                     tts.write_to_fp(audio_fp)
                     st.audio(audio_fp, format='audio/mp3')
