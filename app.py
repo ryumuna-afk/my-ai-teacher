@@ -13,9 +13,9 @@ import re
 # =========================================================
 MODEL_NAME = "models/gemini-pro-latest" 
 TARGET_FILES = ["lesson.pdf"]  
-DAILY_LIMIT = 5 # [설정] 하루 질문 제한 횟수
+DAILY_LIMIT = 5 # 하루 질문 제한
 
-# [보안] 비밀번호 가져오기
+# [보안] 비밀번호
 if "TEACHER_PASSWORD" in st.secrets:
     TEACHER_PASSWORD = st.secrets["TEACHER_PASSWORD"]
 else:
@@ -36,27 +36,35 @@ footer {visibility: hidden;}
 st.markdown(hide_streamlit_style, unsafe_allow_html=True)
 
 # =========================================================
-# [기능] 공유 데이터 (로그, 공지, 질문횟수)
+# [기능] 공유 데이터
 # =========================================================
 @st.cache_resource
 def get_shared_state():
-    # usage: { "2024-05-21_홍길동": 3 } 형태로 날짜별/학생별 횟수 저장
     return {"logs": [], "notice": "", "usage": {}} 
 
 shared_state = get_shared_state()
 
 # =========================================================
-# [함수] 깔끔한 영어 추출기 (TTS용)
+# [핵심] 🧼 영어만 남기는 강력한 세탁기 (TTS용)
 # =========================================================
 def clean_english_for_tts(text):
-    text = re.sub(r'[가-힣]+', '', text)
+    # 1. [S], [V] 같은 분석 태그 내용 통째로 삭제
     text = re.sub(r'\[.*?\]', '', text)
-    text = re.sub(r'[\/\-\*\#\(\)]', ' ', text)
+    
+    # 2. 한글 완전 삭제
+    text = re.sub(r'[가-힣]+', '', text)
+    
+    # 3. ★ 핵심: 영어(a-z), 숫자, 기본 문장부호(.,!?) 빼고 다 지움!
+    # 이모지(👍), 슬래시(/), 대시(-), 별표(*), 괄호 등 싹 사라집니다.
+    text = re.sub(r'[^a-zA-Z0-9.,!?\'\"\s]', ' ', text)
+    
+    # 4. 공백 정리 (지워진 자리를 깔끔하게 붙임)
     text = re.sub(r'\s+', ' ', text).strip()
+    
     return text
 
 # =========================================================
-# 1. 사이드바 (설정, 퀴즈, 횟수 표시)
+# 1. 사이드바
 # =========================================================
 with st.sidebar:
     st.header("⚙️ 설정")
@@ -68,7 +76,7 @@ with st.sidebar:
         
     st.divider()
 
-    # [추가] 로그인한 학생에게 남은 횟수 보여주기
+    # 질문 횟수 표시
     if "student_info" in st.session_state and st.session_state["student_info"] != "TEACHER_MODE":
         student_info = st.session_state["student_info"]
         today_str = datetime.datetime.now().strftime("%Y-%m-%d")
@@ -78,10 +86,10 @@ with st.sidebar:
         remaining = DAILY_LIMIT - current_count
         
         if remaining > 0:
-            st.success(f"🎫 **남은 질문 횟수: {remaining}회**")
+            st.success(f"🎫 **남은 질문: {remaining}회**")
             st.progress(current_count / DAILY_LIMIT)
         else:
-            st.error("⛔ **오늘 질문 횟수 끝!**")
+            st.error("⛔ **오늘 질문 끝!**")
 
     st.divider()
     
@@ -94,7 +102,7 @@ with st.sidebar:
 
     st.divider()
     st.info("📢 **학습 규칙**")
-    st.caption(f"1. 하루에 질문은 {DAILY_LIMIT}번만!")
+    st.caption(f"1. 하루 {DAILY_LIMIT}문제만 질문 가능!")
     st.caption("2. 정답만 묻기 없기! 🙅‍♂️")
 
 # =========================================================
@@ -247,7 +255,6 @@ for msg in st.session_state.messages:
 
 # (6) 퀴즈 생성 처리
 if st.session_state.get("quiz_requested"):
-    # [퀴즈는 횟수 차감 안 함]
     st.session_state["quiz_requested"] = False
     with st.chat_message("assistant"):
         with st.spinner("퀴즈를 만들고 있어요... 🤔"):
@@ -264,27 +271,19 @@ if st.session_state.get("quiz_requested"):
 
 # (7) 사용자 입력 처리
 if prompt := st.chat_input("영어 문장을 입력하세요..."):
-    # ==========================================
-    # [추가됨] 질문 횟수 체크 로직 (핵심)
-    # ==========================================
+    
     today_str = datetime.datetime.now().strftime("%Y-%m-%d")
     usage_key = f"{today_str}_{student_info}"
-    
     current_count = shared_state["usage"].get(usage_key, 0)
     
     if current_count >= DAILY_LIMIT:
         st.error(f"⛔ **오늘의 질문 횟수({DAILY_LIMIT}회)를 모두 다 썼어!** 내일 다시 만나자 👋")
-        # 여기서 멈춤 (AI 호출 안 함)
     else:
-        # 질문 처리 시작
         st.chat_message("user").write(prompt)
         st.session_state.messages.append({"role": "user", "content": prompt})
 
-        # 로그 및 카운트 증가
         now = datetime.datetime.now().strftime("%H:%M:%S")
         shared_state["logs"].append([now, student_info, prompt]) 
-        
-        # [카운트 증가]
         shared_state["usage"][usage_key] = current_count + 1
         
         full_prompt = SYSTEM_PROMPT + "\n\n"
@@ -293,7 +292,6 @@ if prompt := st.chat_input("영어 문장을 입력하세요..."):
             role = "User" if msg["role"] == "user" else "Model"
             full_prompt += f"{role}: {msg['content']}\n"
         
-        # 답변 생성
         with st.chat_message("assistant"):
             message_placeholder = st.empty()
             full_response = ""
@@ -310,10 +308,11 @@ if prompt := st.chat_input("영어 문장을 입력하세요..."):
                 message_placeholder.markdown(full_response)
                 st.session_state.messages.append({"role": "assistant", "content": full_response})
 
-                # 영어 발음만 골라서 읽어주기
+                # [수정된 TTS] 영어만 깔끔하게 읽기 (강력 필터 적용)
                 try:
                     clean_english = clean_english_for_tts(full_response)
-                    if len(clean_english.split()) >= 2:
+                    # 영어 단어가 최소 3개 이상일 때만 오디오 생성
+                    if len(clean_english.split()) >= 3:
                         tts = gTTS(text=clean_english, lang='en')
                         audio_fp = io.BytesIO()
                         tts.write_to_fp(audio_fp)
