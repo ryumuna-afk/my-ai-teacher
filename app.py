@@ -13,9 +13,9 @@ import re
 # =========================================================
 MODEL_NAME = "models/gemini-pro-latest" 
 TARGET_FILES = ["lesson.pdf"]  
+DAILY_LIMIT = 5 # [설정] 하루 질문 제한 횟수
 
-# [보안] 비밀번호를 코드에 적지 않고 금고(Secrets)에서 가져옵니다!
-# 만약 금고 설정이 안 되어 있으면 임시로 'admin'이 비밀번호가 됩니다.
+# [보안] 비밀번호 가져오기
 if "TEACHER_PASSWORD" in st.secrets:
     TEACHER_PASSWORD = st.secrets["TEACHER_PASSWORD"]
 else:
@@ -36,11 +36,12 @@ footer {visibility: hidden;}
 st.markdown(hide_streamlit_style, unsafe_allow_html=True)
 
 # =========================================================
-# [기능] 공유 데이터 (채팅 로그 + 공지사항)
+# [기능] 공유 데이터 (로그, 공지, 질문횟수)
 # =========================================================
 @st.cache_resource
 def get_shared_state():
-    return {"logs": [], "notice": ""} 
+    # usage: { "2024-05-21_홍길동": 3 } 형태로 날짜별/학생별 횟수 저장
+    return {"logs": [], "notice": "", "usage": {}} 
 
 shared_state = get_shared_state()
 
@@ -55,7 +56,7 @@ def clean_english_for_tts(text):
     return text
 
 # =========================================================
-# 1. 사이드바 (설정 및 퀴즈 기능)
+# 1. 사이드바 (설정, 퀴즈, 횟수 표시)
 # =========================================================
 with st.sidebar:
     st.header("⚙️ 설정")
@@ -65,6 +66,23 @@ with st.sidebar:
     else:
         api_key = st.text_input("Gemini API Key", type="password")
         
+    st.divider()
+
+    # [추가] 로그인한 학생에게 남은 횟수 보여주기
+    if "student_info" in st.session_state and st.session_state["student_info"] != "TEACHER_MODE":
+        student_info = st.session_state["student_info"]
+        today_str = datetime.datetime.now().strftime("%Y-%m-%d")
+        usage_key = f"{today_str}_{student_info}"
+        
+        current_count = shared_state["usage"].get(usage_key, 0)
+        remaining = DAILY_LIMIT - current_count
+        
+        if remaining > 0:
+            st.success(f"🎫 **남은 질문 횟수: {remaining}회**")
+            st.progress(current_count / DAILY_LIMIT)
+        else:
+            st.error("⛔ **오늘 질문 횟수 끝!**")
+
     st.divider()
     
     st.header("🧩 복습 퀴즈")
@@ -76,8 +94,8 @@ with st.sidebar:
 
     st.divider()
     st.info("📢 **학습 규칙**")
-    st.caption("1. 정답만 묻기 없기! 🙅‍♂️")
-    st.caption("2. 한 번에 한 문제씩!")
+    st.caption(f"1. 하루에 질문은 {DAILY_LIMIT}번만!")
+    st.caption("2. 정답만 묻기 없기! 🙅‍♂️")
 
 # =========================================================
 # 2. 로그인 화면
@@ -101,7 +119,6 @@ if "student_info" not in st.session_state:
         if submit:
             name = name.strip()
             
-            # [보안] 금고에서 가져온 비밀번호와 비교
             if name == TEACHER_PASSWORD:
                 st.session_state["student_info"] = "TEACHER_MODE"
                 st.rerun()
@@ -117,12 +134,11 @@ if "student_info" not in st.session_state:
     st.stop()
 
 # =========================================================
-# 3. 교사 전용 화면 (대시보드 + 공지 발송)
+# 3. 교사 전용 화면
 # =========================================================
 if st.session_state["student_info"] == "TEACHER_MODE":
     st.title("👨‍🏫 Muna Teacher 대시보드")
     
-    # 공지사항 보내기
     st.subheader("📢 학생들에게 메세지 보내기")
     new_notice = st.text_input("공지 내용을 입력하고 엔터를 치세요 (비우면 공지 삭제)")
     if new_notice:
@@ -159,7 +175,6 @@ student_name = st.session_state.get("student_name", "친구")
 st.title("🏫 Muna Teacher")
 st.caption(f"로그인 정보: {student_info}")
 
-# [공지사항 표시]
 if shared_state["notice"]:
     st.warning(f"📢 **선생님 말씀:** {shared_state['notice']}")
 
@@ -223,7 +238,7 @@ except:
 
 # (4) 채팅 기록 초기화
 if "messages" not in st.session_state:
-    welcome_msg = f"안녕! 👋 {student_name}야. 영어 공부하다 막히는 거 있으면 언제든 물어봐!\n(단, 정답만 쏙 베껴가는 건 안 돼! 😜)"
+    welcome_msg = f"안녕! 👋 {student_name}야. 영어 공부하다 막히는 거 있으면 언제든 물어봐!\n(하루에 {DAILY_LIMIT}개까지만 질문할 수 있어! 아껴 써야 해 😉)"
     st.session_state["messages"] = [{"role": "assistant", "content": welcome_msg}]
 
 # (5) 대화 화면 출력
@@ -232,6 +247,7 @@ for msg in st.session_state.messages:
 
 # (6) 퀴즈 생성 처리
 if st.session_state.get("quiz_requested"):
+    # [퀴즈는 횟수 차감 안 함]
     st.session_state["quiz_requested"] = False
     with st.chat_message("assistant"):
         with st.spinner("퀴즈를 만들고 있어요... 🤔"):
@@ -248,49 +264,65 @@ if st.session_state.get("quiz_requested"):
 
 # (7) 사용자 입력 처리
 if prompt := st.chat_input("영어 문장을 입력하세요..."):
-    st.chat_message("user").write(prompt)
-    st.session_state.messages.append({"role": "user", "content": prompt})
-
-    # 로그 저장
-    now = datetime.datetime.now().strftime("%H:%M:%S")
-    shared_state["logs"].append([now, student_info, prompt]) 
+    # ==========================================
+    # [추가됨] 질문 횟수 체크 로직 (핵심)
+    # ==========================================
+    today_str = datetime.datetime.now().strftime("%Y-%m-%d")
+    usage_key = f"{today_str}_{student_info}"
     
-    full_prompt = SYSTEM_PROMPT + "\n\n"
-    recent_messages = st.session_state.messages[-10:]
-    for msg in recent_messages:
-        role = "User" if msg["role"] == "user" else "Model"
-        full_prompt += f"{role}: {msg['content']}\n"
+    current_count = shared_state["usage"].get(usage_key, 0)
     
-    # 답변 생성
-    with st.chat_message("assistant"):
-        message_placeholder = st.empty()
-        full_response = ""
-        try:
-            responses = model.generate_content(full_prompt, stream=True)
-            for response in responses:
-                if response.text:
-                    full_response += response.text
-                    message_placeholder.markdown(full_response + "▌")
-            
-            if random.random() < 0.2:
-                full_response += "\n\n---\n💡 **[Self-Check]** 스스로 고민해보고, 교과서와 비교해보세요! 👀"
-            
-            message_placeholder.markdown(full_response)
-            st.session_state.messages.append({"role": "assistant", "content": full_response})
+    if current_count >= DAILY_LIMIT:
+        st.error(f"⛔ **오늘의 질문 횟수({DAILY_LIMIT}회)를 모두 다 썼어!** 내일 다시 만나자 👋")
+        # 여기서 멈춤 (AI 호출 안 함)
+    else:
+        # 질문 처리 시작
+        st.chat_message("user").write(prompt)
+        st.session_state.messages.append({"role": "user", "content": prompt})
 
-            # 영어 발음만 골라서 읽어주기
+        # 로그 및 카운트 증가
+        now = datetime.datetime.now().strftime("%H:%M:%S")
+        shared_state["logs"].append([now, student_info, prompt]) 
+        
+        # [카운트 증가]
+        shared_state["usage"][usage_key] = current_count + 1
+        
+        full_prompt = SYSTEM_PROMPT + "\n\n"
+        recent_messages = st.session_state.messages[-10:]
+        for msg in recent_messages:
+            role = "User" if msg["role"] == "user" else "Model"
+            full_prompt += f"{role}: {msg['content']}\n"
+        
+        # 답변 생성
+        with st.chat_message("assistant"):
+            message_placeholder = st.empty()
+            full_response = ""
             try:
-                clean_english = clean_english_for_tts(full_response)
-                if len(clean_english.split()) >= 2:
-                    tts = gTTS(text=clean_english, lang='en')
-                    audio_fp = io.BytesIO()
-                    tts.write_to_fp(audio_fp)
-                    st.audio(audio_fp, format='audio/mp3')
-            except:
-                pass 
+                responses = model.generate_content(full_prompt, stream=True)
+                for response in responses:
+                    if response.text:
+                        full_response += response.text
+                        message_placeholder.markdown(full_response + "▌")
+                
+                if random.random() < 0.2:
+                    full_response += "\n\n---\n💡 **[Self-Check]** 스스로 고민해보고, 교과서와 비교해보세요! 👀"
+                
+                message_placeholder.markdown(full_response)
+                st.session_state.messages.append({"role": "assistant", "content": full_response})
 
-        except Exception as e:
-            if "finish_reason" in str(e):
-                 st.error("AI가 답변을 주저하고 있어요. (안전 필터)")
-            else:
-                 st.error(f"오류가 발생했습니다: {e}")
+                # 영어 발음만 골라서 읽어주기
+                try:
+                    clean_english = clean_english_for_tts(full_response)
+                    if len(clean_english.split()) >= 2:
+                        tts = gTTS(text=clean_english, lang='en')
+                        audio_fp = io.BytesIO()
+                        tts.write_to_fp(audio_fp)
+                        st.audio(audio_fp, format='audio/mp3')
+                except:
+                    pass 
+
+            except Exception as e:
+                if "finish_reason" in str(e):
+                     st.error("AI가 답변을 주저하고 있어요. (안전 필터)")
+                else:
+                     st.error(f"오류가 발생했습니다: {e}")
